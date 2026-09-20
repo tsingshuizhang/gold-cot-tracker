@@ -38,8 +38,8 @@
   }
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
 
-  /* ---- 手机端适配 ---- */
-  @media (max-width: 768px) {
+  /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
+  @media (max-width: 768px), (max-height: 500px) {
     /* 放弃"铺满窗口", 恢复自然流: 图表固定高度, 页面整体滚动 */
     html, body { height: auto; }
     body { display: block; padding: 10px; }
@@ -217,8 +217,9 @@ function macdMarkers(dates, closes, dif, dea) {
 function render(ta) {
   chartData = ta;
   const ohlc = ta.ohlc || [];
-  // 窄屏(手机): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
-  const narrow = document.getElementById('chart').clientWidth < 720;
+  // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
+  const chartEl = document.getElementById('chart');
+  const narrow = chartEl.clientWidth < 720 || chartEl.clientHeight < 500;
   const dates = ohlc.map(r => r[0]);
   const closes = ohlc.map(r => r[2]);
   const klineData = ohlc.map(r => [r[0], r[1], r[2], r[4], r[3]]); // x,开,收,低,高
