@@ -58,6 +58,7 @@
     width: 100%; flex: 1; min-height: 320px;
   }
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+  .note-short { display: none; }
 
   /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
   @media (max-width: 768px), (max-height: 500px) {
@@ -65,7 +66,7 @@
     html, body { height: auto; }
     body { display: block; padding: 10px; }
     .container { flex: none; display: block; min-height: 0; }
-    #chart { flex: none; height: 480px; min-height: 0; }
+    #chart { flex: none; height: 560px; min-height: 0; }
     h1 { font-size: 18px; }
     .header { gap: 10px; }
     .pagelink { padding: 6px 10px; font-size: 12px; }
@@ -74,10 +75,16 @@
     .card .value { font-size: 17px; }
     .toolbar { gap: 12px; padding: 10px 12px; margin-bottom: 10px; }
     .btn { padding: 4px 10px; font-size: 12px; }
-    .note { font-size: 11px; margin-top: 8px; }
+    /* 手机端说明文字用一句话短版, 避免占用过多空间 */
+    .note-long { display: none; }
+    .note-short { display: block; font-size: 10px; line-height: 1.5; margin-top: 8px; }
   }
   @media (max-width: 420px) {
     .card { min-width: 100%; }
+  }
+  /* 横屏(矮屏): 图表再加高 */
+  @media (max-height: 500px) {
+    #chart { height: 640px; }
   }
 </style>
 </head>
@@ -111,7 +118,7 @@
   </div>
 
   <div id="chart"></div>
-  <div class="note">
+  <div class="note note-long">
     交易者分类(CFTC Disaggregated 口径):
     <b>管理基金 Managed Money</b> = 机构大资金/投机主力;
     <b>生产商/贸易商 Producer/Merchant</b> = 产业商业套保;
@@ -123,6 +130,10 @@
     K线/布林带/斐波那契/均线/MACD 等技术分析已移至
     <a href="dashboard_ta.html">技术分析页</a>, 两页数据互相独立。
     图表支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
+  </div>
+  <div class="note note-short">
+    交易者分类与指标规则详见 README.md; 支持滚轮缩放与底部滑块拖动;
+    技术分析请见<a href="dashboard_ta.html">技术分析页</a>。
   </div>
 </div>
 
@@ -223,8 +234,8 @@ function render() {
   const dxy   = getPairs(DXY);
 
   // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
-  const chartEl = document.getElementById('chart');
-  const narrow = chartEl.clientWidth < 720 || chartEl.clientHeight < 500;
+  // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
+  const narrow = window.innerWidth < 768 || window.innerHeight < 500;
 
   const catLine = (name, key, color, extra = {}) => ({
     name, type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: toPair(key),

@@ -37,6 +37,7 @@
     width: 100%; flex: 1; min-height: 320px;
   }
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+  .note-short { display: none; }
 
   /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
   @media (max-width: 768px), (max-height: 500px) {
@@ -44,13 +45,19 @@
     html, body { height: auto; }
     body { display: block; padding: 10px; }
     .container { flex: none; display: block; min-height: 0; }
-    #chart { flex: none; height: 640px; min-height: 0; }
+    #chart { flex: none; height: 700px; min-height: 0; }
     h1 { font-size: 17px; }
     .header { gap: 10px; margin-bottom: 8px; }
     .navlink { font-size: 12px; }
     .status { margin-left: 0; width: 100%; justify-content: space-between; }
     .btn { padding: 4px 10px; font-size: 12px; }
-    .note { font-size: 11px; margin-top: 8px; }
+    /* 手机端说明文字用一句话短版, 避免占用过多空间 */
+    .note-long { display: none; }
+    .note-short { display: block; font-size: 10px; line-height: 1.5; margin-top: 8px; }
+  }
+  /* 横屏(矮屏): 图表再加高 */
+  @media (max-height: 500px) {
+    #chart { height: 800px; }
   }
 </style>
 </head>
@@ -66,7 +73,7 @@
   </div>
 
   <div id="chart"></div>
-  <div class="note">
+  <div class="note note-long">
     本页数据独立于 COT 持仓页: 每 60 秒自动重载
     <code>data/ta_data.js</code>, 也可点"刷新数据"手动重载;
     行情增量更新(只补缺失日期, 不重抓历史)请运行 <code>./run.sh ta</code>。
@@ -75,6 +82,10 @@
     平均开采成本为行业 AISC 年度估算值(美元/盎司), 比值 = 金价 ÷ AISC;
     斐波那契回撤位基于可视区间最高/最低价自动计算, 缩放时实时重算。
     支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
+  </div>
+  <div class="note note-short">
+    每 60 秒自动刷新行情; 金叉/死叉/背离标注规则见 README.md;
+    支持滚轮缩放与底部滑块拖动。
   </div>
 </div>
 
@@ -218,8 +229,8 @@ function render(ta) {
   chartData = ta;
   const ohlc = ta.ohlc || [];
   // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
-  const chartEl = document.getElementById('chart');
-  const narrow = chartEl.clientWidth < 720 || chartEl.clientHeight < 500;
+  // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
+  const narrow = window.innerWidth < 768 || window.innerHeight < 500;
   const dates = ohlc.map(r => r[0]);
   const closes = ohlc.map(r => r[2]);
   const klineData = ohlc.map(r => [r[0], r[1], r[2], r[4], r[3]]); // x,开,收,低,高
