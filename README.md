@@ -4,6 +4,10 @@
 (Commitments of Traders, 交易员持仓报告) 数据, 叠加金价、美元指数,
 生成可交互的 HTML 持仓看板。
 
+**在线网站(自动更新): <https://tsingshuizhang.github.io/gold-cot-tracker/dashboard.html>**
+由 GitHub Actions 每天定时抓取数据并发布, 无需手动操作;
+技术分析页在网站上每 60 秒自动重载最新行情数据。
+
 ## 数据来源
 
 - **CFTC Socrata API**(官方, 免费, 无需密钥)
