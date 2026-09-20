@@ -31,6 +31,9 @@
     transition: all .15s;
   }
   .btn:hover { border-color: #f39c12; color: #f39c12; }
+  .btn.active { background: #f39c12; border-color: #f39c12; color: #fff; }
+  .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .group .glabel { font-size: 13px; color: #7f8c8d; }
   #chart {
     background: #fff; border-radius: 10px;
     box-shadow: 0 1px 4px rgba(0,0,0,.06);
@@ -66,6 +69,12 @@
   <div class="header">
     <h1>COMEX 黄金技术分析</h1>
     <a class="navlink" href="dashboard.html">← 返回 COT 持仓看板</a>
+    <div class="group">
+      <span class="glabel">K线周期</span>
+      <button class="btn active" data-period="day">日K</button>
+      <button class="btn" data-period="week">周K</button>
+      <button class="btn" data-period="month">月K</button>
+    </div>
     <div class="status">
       <span id="updated">数据加载中...</span>
       <button class="btn" id="refreshBtn">刷新数据</button>
@@ -78,14 +87,15 @@
     <code>data/ta_data.js</code>, 也可点"刷新数据"手动重载;
     行情增量更新(只补缺失日期, 不重抓历史)请运行 <code>./run.sh ta</code>。
     布林带 (20, 2); 均线 MA5/10/20/60/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
+    K线周期可切换 日K/周K/月K (周期聚合: 开=首, 收=末, 高=最高, 低=最低);
     金叉/死叉/顶背离/底背离 标注规则见 README.md。
     平均开采成本为行业 AISC 年度估算值(美元/盎司), 比值 = 金价 ÷ AISC;
     斐波那契回撤位基于可视区间最高/最低价自动计算, 缩放时实时重算。
     支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
   </div>
   <div class="note note-short">
-    每 60 秒自动刷新行情; 金叉/死叉/背离标注规则见 README.md;
-    支持滚轮缩放与底部滑块拖动。
+    每 60 秒自动刷新行情; K线周期可切换 日/周/月; 金叉/死叉/背离标注规则见
+    README.md; 支持滚轮缩放与底部滑块拖动。
   </div>
 </div>
 
@@ -95,10 +105,15 @@
 // ======================================================
 
 const AUTO_REFRESH_SEC = 60;
-// 可视区间最小跨度: 60 个自然日 (≈40 个交易日), 再放大无效,
-// 防止过度放大导致指标线/回撤位可读性变差
-const MIN_SPAN_MS = 60 * 24 * 3600 * 1000;
+// 可视区间最小跨度 (随 K 线周期放大): 防止过度放大导致指标可读性变差
+const MIN_SPAN_MS = {
+  day:   60 * 24 * 3600 * 1000,    // 日K: 60 个自然日 ≈ 40 个交易日
+  week:  200 * 24 * 3600 * 1000,   // 周K: ≈ 30 根
+  month: 900 * 24 * 3600 * 1000,   // 月K: ≈ 30 根
+};
+let period = 'day';       // 当前 K 线周期: day / week / month
 let chartData = null;     // 当前已渲染的数据
+let currentOHLC = [];     // 当前周期聚合后的 K 线 (供斐波那契按可视区间重算)
 let lastUpdated = null;   // 上次渲染的数据时间戳, 避免无变化时重复重绘
 
 const chart = echarts.init(document.getElementById('chart'));
@@ -114,6 +129,26 @@ const COLORS = {
 };
 
 // ---------------- 指标计算 ----------------
+// 日K -> 周K/月K 聚合: 开=首, 收=末, 高=最大, 低=最小
+function aggregateOHLC(ohlc, p) {
+  if (p === 'day') return ohlc;
+  const keyOf = d => {
+    if (p === 'month') return d.slice(0, 7);
+    const dt = new Date(d);
+    const day = (dt.getDay() + 6) % 7;          // 周一为一周起点
+    const mon = new Date(dt.getTime() - day * 86400000);
+    return mon.toISOString().slice(0, 10);
+  };
+  const groups = new Map();
+  for (const r of ohlc) {
+    const k = keyOf(r[0]);
+    const g = groups.get(k);
+    if (!g) groups.set(k, { d: r[0], o: r[1], c: r[2], h: r[3], l: r[4] });
+    else { g.c = r[2]; g.h = Math.max(g.h, r[3]); g.l = Math.min(g.l, r[4]); }
+  }
+  return [...groups.values()].map(g => [g.d, g.o, g.c, g.h, g.l]);
+}
+
 function calcMA(closes, n) {
   const out = [];
   let sum = 0;
@@ -168,7 +203,9 @@ function fibMarkLine(ohlc) {
     silent: true, symbol: 'none', animation: false,
     lineStyle: { color: COLORS.fib, type: 'dashed', width: 1, opacity: 0.8 },
     label: {
-      position: 'insideEndTop', fontSize: 10, color: COLORS.fib,
+      // 黑色字放在右端, 半透明白底保证有线穿过时依然清晰可读
+      position: 'insideEndTop', distance: 6, fontSize: 10, color: '#000',
+      backgroundColor: 'rgba(255,255,255,0.85)', padding: [2, 4],
       formatter: p => `${(ratios[p.dataIndex] * 100).toFixed(1)}%  ${p.value.toFixed(0)}`,
     },
     data: ratios.map(f => ({ yAxis: +(lo + diff * f).toFixed(1) })),
@@ -227,7 +264,8 @@ function macdMarkers(dates, closes, dif, dea) {
 // ---------------- 渲染 ----------------
 function render(ta) {
   chartData = ta;
-  const ohlc = ta.ohlc || [];
+  const ohlc = aggregateOHLC(ta.ohlc || [], period);   // 按当前周期聚合
+  currentOHLC = ohlc;
   // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
   const narrow = window.innerWidth < 768 || window.innerHeight < 500;
@@ -284,6 +322,8 @@ function render(ta) {
     ],
     tooltip: {
       trigger: 'axis',
+      confine: true,          // 浮框限制在图表区域内, 避免手机上超出屏幕
+      textStyle: { fontSize: narrow ? 10 : 12 },
       axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] },
       formatter(params) {
         const d = new Date(params[0].axisValue);
@@ -338,9 +378,10 @@ function render(ta) {
         splitLine: { lineStyle: { type: 'dashed' } } },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2, 3], minValueSpan: MIN_SPAN_MS },
+      { type: 'inside', xAxisIndex: [0, 1, 2, 3],
+        minValueSpan: MIN_SPAN_MS[period] },
       { type: 'slider', xAxisIndex: [0, 1, 2, 3], bottom: 8, height: 22,
-        minValueSpan: MIN_SPAN_MS },
+        minValueSpan: MIN_SPAN_MS[period] },
     ],
     series: [
       // 图1: K线 + 布林带 + 斐波那契
@@ -413,9 +454,9 @@ function render(ta) {
 // 注意: 时间轴上 dataZoom 的 start/end 百分比是按"时间跨度"映射的,
 // 必须按时间切片, 按索引切片会因周末/假期缺口产生位置偏差
 chart.on('datazoom', () => {
-  if (!chartData || !chartData.ohlc || !chartData.ohlc.length) return;
+  if (!currentOHLC.length) return;
   const dz = chart.getOption().dataZoom[0];
-  const rows = chartData.ohlc;
+  const rows = currentOHLC;
   const t0 = new Date(rows[0][0]).getTime();
   const t1 = new Date(rows[rows.length - 1][0]).getTime();
   const span = t1 - t0;
@@ -462,6 +503,18 @@ function loadData(manual) {
 
 document.getElementById('refreshBtn')
     .addEventListener('click', () => loadData(true));
+
+// K 线周期切换: 日K / 周K / 月K
+document.querySelectorAll('[data-period]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-period]')
+        .forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    period = btn.dataset.period;
+    if (chartData) render(chartData);
+  });
+});
+
 window.addEventListener('resize', () => chart.resize());
 // 字体加载完成后尺寸可能再变, load 时再校正一次
 window.addEventListener('load', () => chart.resize());
