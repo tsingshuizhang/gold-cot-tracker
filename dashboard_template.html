@@ -58,6 +58,24 @@
     width: 100%; flex: 1; min-height: 320px;
   }
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+
+  /* ---- 手机端适配 ---- */
+  @media (max-width: 768px) {
+    body { padding: 10px; }
+    h1 { font-size: 18px; }
+    .header { gap: 10px; }
+    .pagelink { padding: 6px 10px; font-size: 12px; }
+    .cards { gap: 8px; margin-bottom: 10px; }
+    .card { min-width: calc(50% - 8px); padding: 10px 12px; }
+    .card .value { font-size: 17px; }
+    .toolbar { gap: 12px; padding: 10px 12px; margin-bottom: 10px; }
+    .btn { padding: 4px 10px; font-size: 12px; }
+    #chart { min-height: 480px; }
+    .note { font-size: 11px; margin-top: 8px; }
+  }
+  @media (max-width: 420px) {
+    .card { min-width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -211,14 +229,14 @@ function render() {
     animation: false,
     title: [
       { text: '管理基金(机构大资金)净持仓' + (price ? ' vs 金价' : ''),
-        left: 80, top: 8, textStyle: { fontSize: 13 } },
-      { text: '各类交易者净持仓对比', left: 80, top: '25%',
+        left: 60, top: 8, textStyle: { fontSize: 13 } },
+      { text: '各类交易者净持仓对比', left: 60, top: '25%',
         textStyle: { fontSize: 13 } },
-      { text: '管理基金多空分项', left: 80, top: '41%',
+      { text: '管理基金多空分项', left: 60, top: '41%',
         textStyle: { fontSize: 13 } },
-      { text: '总持仓 Open Interest', left: 80, top: '54%',
+      { text: '总持仓 Open Interest', left: 60, top: '54%',
         textStyle: { fontSize: 13 } },
-      { text: '金价 vs 美元指数 DXY', left: 80, top: '66%',
+      { text: '金价 vs 美元指数 DXY', left: 60, top: '66%',
         textStyle: { fontSize: 13 } },
     ],
     animation: false,
@@ -237,22 +255,22 @@ function render() {
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     legend: [
       { data: ['管理基金净持仓'].concat(price ? ['COMEX 金价'] : []),
-        top: 6, right: 80 },
+        top: 6, right: 48 },
       { data: ['管理基金(机构)', '生产商/贸易商(套保)', '掉期交易商',
                '其他报告(中小投机)', '散户/非报告'],
-        top: '25%', right: 80, itemWidth: 14 },
-      { data: ['管理基金多头', '管理基金空头'], top: '41%', right: 80 },
-      { data: ['总持仓 OI'], top: '54%', right: 80 },
+        top: '25%', right: 48, itemWidth: 14 },
+      { data: ['管理基金多头', '管理基金空头'], top: '41%', right: 48 },
+      { data: ['总持仓 OI'], top: '54%', right: 48 },
       { data: ['COMEX 金价', '美元指数 DXY'].filter(
           s => (s === 'COMEX 金价' ? price : dxy)),
-        top: '66%', right: 80 },
+        top: '66%', right: 48 },
     ],
     grid: [
-      { left: 80, right: 80, top: 40, height: '18%' },
-      { left: 80, right: 80, top: '27%', height: '12%' },
-      { left: 80, right: 80, top: '43%', height: '9%' },
-      { left: 80, right: 80, top: '56%', height: '8%' },
-      { left: 80, right: 80, top: '68%', height: '23%' },
+      { left: 60, right: 48, top: 40, height: '18%' },
+      { left: 60, right: 48, top: '27%', height: '12%' },
+      { left: 60, right: 48, top: '43%', height: '9%' },
+      { left: 60, right: 48, top: '56%', height: '8%' },
+      { left: 60, right: 48, top: '68%', height: '23%' },
     ],
     xAxis: [0, 1, 2, 3, 4].map(i => ({
       type: 'time', gridIndex: i, show: i === 4,

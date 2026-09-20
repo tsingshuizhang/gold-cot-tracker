@@ -25,6 +25,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import ssl
 import sys
 import urllib.parse
@@ -214,7 +215,12 @@ def fetch_gold_cot(dataset_id: str, limit: int) -> list[dict]:
     """按报告日期倒序抓取黄金 COT 记录。
 
     优先使用 Socrata API; 不可用时自动切换到 CFTC 官方历史 zip。
+    设置环境变量 GOLD_COT_FORCE_ZIP=1 可强制使用 zip 源
+    (Socrata 返回的字段名与该数据集个别版本不一致, 会导致分项持仓为 0,
+    因此在 CI 等环境中建议强制 zip 源, 行为与本机一致)。
     """
+    if os.environ.get("GOLD_COT_FORCE_ZIP"):
+        return fetch_gold_cot_zip(dataset_id, limit)
     try:
         return socrata_query(dataset_id, {
             "cftc_contract_market_code": GOLD_MARKET_CODE,
@@ -818,6 +824,12 @@ def cmd_dashboard(weeks: int) -> None:
     """生成可交互的 HTML 看板: 持仓页 dashboard.html + 技术分析页 dashboard_ta.html。"""
     disagg, _ = load_history(weeks, with_legacy=False)
     ordered = sorted(disagg, key=lambda r: r["report_date"])
+
+    # 数据 sanity check: 最新一期分项持仓不应全为 0
+    latest = ordered[-1]
+    if not latest["mm_long"] and not latest["mm_short"]:
+        print("  [警告] 最新一期管理基金多空持仓为 0, 数据源字段可能不匹配,"
+              " 建议设置 GOLD_COT_FORCE_ZIP=1 使用官方 zip 源")
 
     cot_data = [{
         "d": r["report_date"],

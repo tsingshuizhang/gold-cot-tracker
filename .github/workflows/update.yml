@@ -25,6 +25,8 @@ jobs:
         run: pip install yfinance
 
       - name: 抓取数据并生成看板 (增量缓存, 只补缺失数据)
+        env:
+          GOLD_COT_FORCE_ZIP: "1"   # Socrata 字段名与官方 zip 不一致会导致分项持仓为 0
         run: python gold_cot.py dashboard --weeks 520
 
       - name: 提交更新后的数据文件

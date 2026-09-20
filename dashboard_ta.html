@@ -37,6 +37,18 @@
     width: 100%; flex: 1; min-height: 320px;
   }
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+
+  /* ---- 手机端适配 ---- */
+  @media (max-width: 768px) {
+    body { padding: 10px; }
+    h1 { font-size: 17px; }
+    .header { gap: 10px; margin-bottom: 8px; }
+    .navlink { font-size: 12px; }
+    .status { margin-left: 0; width: 100%; justify-content: space-between; }
+    .btn { padding: 4px 10px; font-size: 12px; }
+    #chart { min-height: 560px; }
+    .note { font-size: 11px; margin-top: 8px; }
+  }
 </style>
 </head>
 <body>
@@ -244,14 +256,14 @@ function render(ta) {
   const option = {
     animation: false,
     title: [
-      { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 80, top: 8,
+      { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 60, top: 8,
         textStyle: { fontSize: 13 } },
-      { text: '收盘价 + 均线 MA', left: 80, top: '35%',
+      { text: '收盘价 + 均线 MA', left: 60, top: '35%',
         textStyle: { fontSize: 13 } },
       { text: '金价 vs 行业平均开采成本 (AISC) 及 金价/AISC 比值',
-        left: 80, top: '59%', textStyle: { fontSize: 13 } },
+        left: 60, top: '59%', textStyle: { fontSize: 13 } },
       { text: 'MACD(12, 26, 9) — 金叉 / 死叉 / 顶背离 / 底背离',
-        left: 80, top: '75%', textStyle: { fontSize: 13 } },
+        left: 60, top: '75%', textStyle: { fontSize: 13 } },
     ],
     tooltip: {
       trigger: 'axis',
@@ -278,18 +290,18 @@ function render(ta) {
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     legend: [
       { data: ['COMEX 黄金K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'],
-        top: 6, right: 80, itemWidth: 14 },
+        top: 6, right: 48, itemWidth: 14 },
       { data: ['收盘价'].concat(maDefs.map(([n]) => 'MA' + n)),
-        top: '35%', right: 80, itemWidth: 14 },
+        top: '35%', right: 48, itemWidth: 14 },
       { data: ['COMEX 金价', '平均开采成本 AISC', '金价/AISC 比值'],
-        top: '59%', right: 80 },
-      { data: ['DIF', 'DEA', 'MACD 柱'], top: '75%', right: 80 },
+        top: '59%', right: 48 },
+      { data: ['DIF', 'DEA', 'MACD 柱'], top: '75%', right: 48 },
     ],
     grid: [
-      { left: 80, right: 80, top: 40, height: '27%' },
-      { left: 80, right: 80, top: '36%', height: '21%' },
-      { left: 80, right: 80, top: '60%', height: '13%' },
-      { left: 80, right: 80, top: '76%', height: '14%' },
+      { left: 60, right: 48, top: 40, height: '27%' },
+      { left: 60, right: 48, top: '36%', height: '21%' },
+      { left: 60, right: 48, top: '60%', height: '13%' },
+      { left: 60, right: 48, top: '76%', height: '14%' },
     ],
     xAxis: [0, 1, 2, 3].map(i => ({
       type: 'time', gridIndex: i, show: i === 3,
