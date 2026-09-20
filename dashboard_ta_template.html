@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COMEX 黄金技术分析</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #2c3e50; padding: 20px;
+    display: flex; flex-direction: column;
+  }
+  .container {
+    width: 100%; flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+            margin-bottom: 10px; }
+  h1 { font-size: 20px; }
+  .navlink { font-size: 13px; color: #2980b9; text-decoration: none;
+             white-space: nowrap; }
+  .navlink:hover { text-decoration: underline; }
+  .status { margin-left: auto; display: flex; align-items: center; gap: 12px;
+            font-size: 12px; color: #95a5a6; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
+    padding: 5px 14px; font-size: 13px; cursor: pointer; color: #2c3e50;
+    transition: all .15s;
+  }
+  .btn:hover { border-color: #f39c12; color: #f39c12; }
+  #chart {
+    background: #fff; border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    width: 100%; flex: 1; min-height: 320px;
+  }
+  .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>COMEX 黄金技术分析</h1>
+    <a class="navlink" href="dashboard.html">← 返回 COT 持仓看板</a>
+    <div class="status">
+      <span id="updated">数据加载中...</span>
+      <button class="btn" id="refreshBtn">刷新数据</button>
+    </div>
+  </div>
+
+  <div id="chart"></div>
+  <div class="note">
+    本页数据独立于 COT 持仓页: 每 60 秒自动重载
+    <code>data/ta_data.js</code>, 也可点"刷新数据"手动重载;
+    行情增量更新(只补缺失日期, 不重抓历史)请运行 <code>./run.sh ta</code>。
+    布林带 (20, 2); 均线 MA5/10/20/60/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
+    金叉/死叉/顶背离/底背离 标注规则见 README.md。
+    平均开采成本为行业 AISC 年度估算值(美元/盎司), 比值 = 金价 ÷ AISC;
+    斐波那契回撤位基于可视区间最高/最低价自动计算, 缩放时实时重算。
+    支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
+  </div>
+</div>
+
+<script>
+// ============ 数据由 data/ta_data.js 提供: ============
+// window.TA_DATA = { updated, ohlc: [[日期,开,收,高,低],...], cost: [[年,AISC],...] }
+// ======================================================
+
+const AUTO_REFRESH_SEC = 60;
+// 可视区间最小跨度: 60 个自然日 (≈40 个交易日), 再放大无效,
+// 防止过度放大导致指标线/回撤位可读性变差
+const MIN_SPAN_MS = 60 * 24 * 3600 * 1000;
+let chartData = null;     // 当前已渲染的数据
+let lastUpdated = null;   // 上次渲染的数据时间戳, 避免无变化时重复重绘
+
+const chart = echarts.init(document.getElementById('chart'));
+
+const COLORS = {
+  up: '#e74c3c', down: '#27ae60',          // K线/柱: 红涨绿跌
+  bollUp: '#2980b9', bollMid: '#34495e', bollDn: '#2980b9',
+  fib: '#8e44ad',                           // 斐波那契: 紫色虚线, 与布林带明显区分
+  ma5: '#e74c3c', ma10: '#f39c12', ma20: '#2980b9',
+  ma60: '#27ae60', ma120: '#9b59b6', ma250: '#7f8c8d',
+  gold: '#f39c12', cost: '#16a085', ratio: '#c0392b',
+  dif: '#e74c3c', dea: '#2980b9',
+};
+
+// ---------------- 指标计算 ----------------
+function calcMA(closes, n) {
+  const out = [];
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= n) sum -= closes[i - n];
+    out.push(i >= n - 1 ? +(sum / n).toFixed(1) : null);
+  }
+  return out;
+}
+
+function calcEMA(vals, n) {
+  const k = 2 / (n + 1);
+  const out = [];
+  let e = null;
+  for (let i = 0; i < vals.length; i++) {
+    e = e === null ? vals[i] : vals[i] * k + e * (1 - k);
+    out.push(e);
+  }
+  return out;
+}
+
+function calcMACD(closes, fast = 12, slow = 26, sig = 9) {
+  const ef = calcEMA(closes, fast), es = calcEMA(closes, slow);
+  const dif = closes.map((_, i) => ef[i] - es[i]);
+  const dea = calcEMA(dif, sig);
+  const hist = dif.map((d, i) => (d - dea[i]) * 2);
+  return { dif, dea, hist };
+}
+
+function bollinger(closes, n = 20, k = 2) {
+  const mid = [], up = [], dn = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < n - 1) { mid.push(null); up.push(null); dn.push(null); continue; }
+    const slice = closes.slice(i - n + 1, i + 1);
+    const m = slice.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(slice.reduce((a, b) => a + (b - m) * (b - m), 0) / n);
+    mid.push(+m.toFixed(1));
+    up.push(+(m + k * sd).toFixed(1));
+    dn.push(+(m - k * sd).toFixed(1));
+  }
+  return { mid, up, dn };
+}
+
+function fibMarkLine(ohlc) {
+  if (!ohlc || !ohlc.length) return { data: [] };
+  let hi = -Infinity, lo = Infinity;
+  for (const r of ohlc) { if (r[3] > hi) hi = r[3]; if (r[4] < lo) lo = r[4]; }
+  const diff = hi - lo;
+  const ratios = [0.236, 0.382, 0.5, 0.618, 0.786];
+  return {
+    silent: true, symbol: 'none', animation: false,
+    lineStyle: { color: COLORS.fib, type: 'dashed', width: 1, opacity: 0.8 },
+    label: {
+      position: 'insideEndTop', fontSize: 10, color: COLORS.fib,
+      formatter: p => `${(ratios[p.dataIndex] * 100).toFixed(1)}%  ${p.value.toFixed(0)}`,
+    },
+    data: ratios.map(f => ({ yAxis: +(lo + diff * f).toFixed(1) })),
+  };
+}
+
+// 摆动点: 左右各 k 根 K 线内的局部最高/最低
+function swingPoints(vals, k = 5) {
+  const highs = [], lows = [];
+  for (let i = k; i < vals.length - k; i++) {
+    let isHigh = true, isLow = true;
+    for (let j = i - k; j <= i + k; j++) {
+      if (j === i) continue;
+      if (vals[j] >= vals[i]) isHigh = false;
+      if (vals[j] <= vals[i]) isLow = false;
+    }
+    if (isHigh) highs.push(i);
+    if (isLow) lows.push(i);
+  }
+  return { highs, lows };
+}
+
+// MACD 信号标注: 金叉/死叉 (DIF 与 DEA 交叉), 顶背离/底背离 (价格摆动点 vs DIF)
+function macdMarkers(dates, closes, dif, dea) {
+  const cross = [];
+  for (let i = 1; i < dif.length; i++) {
+    if (dif[i - 1] <= dea[i - 1] && dif[i] > dea[i])
+      cross.push({ i, type: '金叉', color: COLORS.up });
+    else if (dif[i - 1] >= dea[i - 1] && dif[i] < dea[i])
+      cross.push({ i, type: '死叉', color: COLORS.down });
+  }
+  const { highs, lows } = swingPoints(closes, 5);
+  const diverge = [];
+  for (let a = 0; a + 1 < highs.length; a++) {
+    const i1 = highs[a], i2 = highs[a + 1];
+    if (closes[i2] > closes[i1] && dif[i2] < dif[i1])
+      diverge.push({ i: i2, type: '顶背离', color: '#8e44ad' });
+  }
+  for (let a = 0; a + 1 < lows.length; a++) {
+    const i1 = lows[a], i2 = lows[a + 1];
+    if (closes[i2] < closes[i1] && dif[i2] > dif[i1])
+      diverge.push({ i: i2, type: '底背离', color: '#2980b9' });
+  }
+  const toPt = (m, size) => ({
+    coord: [dates[m.i], +dif[m.i].toFixed(2)],
+    value: m.type,
+    symbol: 'pin', symbolSize: size,
+    itemStyle: { color: m.color },
+    label: { fontSize: 9, color: '#fff' },
+  });
+  // 标注过多会糊住图表, 只保留最近的一批
+  return cross.slice(-60).map(m => toPt(m, 30))
+      .concat(diverge.slice(-12).map(m => toPt(m, 42)));
+}
+
+// ---------------- 渲染 ----------------
+function render(ta) {
+  chartData = ta;
+  const ohlc = ta.ohlc || [];
+  const dates = ohlc.map(r => r[0]);
+  const closes = ohlc.map(r => r[2]);
+  const klineData = ohlc.map(r => [r[0], r[1], r[2], r[4], r[3]]); // x,开,收,低,高
+  const pair = arr => dates.map((d, i) => [d, arr[i]]);
+
+  // 布林带
+  const b = bollinger(closes);
+  const bollUp = pair(b.up), bollMid = pair(b.mid), bollDn = pair(b.dn);
+
+  // 均线
+  const maDefs = [[5, COLORS.ma5], [10, COLORS.ma10], [20, COLORS.ma20],
+                  [60, COLORS.ma60], [120, COLORS.ma120], [250, COLORS.ma250]];
+  const maSeries = maDefs.map(([n, color]) => ({
+    name: 'MA' + n, type: 'line', xAxisIndex: 1, yAxisIndex: 1,
+    data: pair(calcMA(closes, n)), showSymbol: false, connectNulls: false,
+    lineStyle: { width: 1.2, color },
+    itemStyle: { color },
+  }));
+
+  // MACD
+  const { dif, dea, hist } = calcMACD(closes);
+  const difData = pair(dif.map(v => +v.toFixed(2)));
+  const deaData = pair(dea.map(v => +v.toFixed(2)));
+  const histData = pair(hist.map(v => +v.toFixed(2)));
+
+  // 开采成本 (年度值前向填充) 与 比值
+  const costTable = ta.cost || [];
+  const costOf = y => {
+    let c = null;
+    for (const [cy, cv] of costTable) if (cy <= +y) c = cv;
+    return c;
+  };
+  const priceLine = pair(closes);
+  const costLine = dates.map(d => [d, costOf(d.slice(0, 4))]);
+  const ratioLine = dates.map((d, i) => {
+    const c = costOf(d.slice(0, 4));
+    return [d, c ? +(closes[i] / c).toFixed(3) : null];
+  });
+
+  const option = {
+    animation: false,
+    title: [
+      { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 80, top: 8,
+        textStyle: { fontSize: 13 } },
+      { text: '收盘价 + 均线 MA', left: 80, top: '35%',
+        textStyle: { fontSize: 13 } },
+      { text: '金价 vs 行业平均开采成本 (AISC) 及 金价/AISC 比值',
+        left: 80, top: '59%', textStyle: { fontSize: 13 } },
+      { text: 'MACD(12, 26, 9) — 金叉 / 死叉 / 顶背离 / 底背离',
+        left: 80, top: '75%', textStyle: { fontSize: 13 } },
+    ],
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] },
+      formatter(params) {
+        const d = new Date(params[0].axisValue);
+        let html = `<b>${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}</b>`;
+        for (const p of params) {
+          if (p.componentType === 'markPoint') {
+            html += `<br>${p.marker}${p.seriesName} 标注: <b>${p.value}</b>`;
+            continue;
+          }
+          if (p.seriesType === 'candlestick') {
+            const v = p.value;
+            html += `<br>${p.marker}${p.seriesName}: 开 ${v[1]} / 收 ${v[2]} / 低 ${v[3]} / 高 ${v[4]}`;
+            continue;
+          }
+          const val = Array.isArray(p.value) ? p.value[1] : p.value;
+          html += `<br>${p.marker}${p.seriesName}: <b>${val == null ? '--' : Number(val).toLocaleString('en-US')}</b>`;
+        }
+        return html;
+      }
+    },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    legend: [
+      { data: ['COMEX 黄金K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'],
+        top: 6, right: 80, itemWidth: 14 },
+      { data: ['收盘价'].concat(maDefs.map(([n]) => 'MA' + n)),
+        top: '35%', right: 80, itemWidth: 14 },
+      { data: ['COMEX 金价', '平均开采成本 AISC', '金价/AISC 比值'],
+        top: '59%', right: 80 },
+      { data: ['DIF', 'DEA', 'MACD 柱'], top: '75%', right: 80 },
+    ],
+    grid: [
+      { left: 80, right: 80, top: 40, height: '27%' },
+      { left: 80, right: 80, top: '36%', height: '21%' },
+      { left: 80, right: 80, top: '60%', height: '13%' },
+      { left: 80, right: 80, top: '76%', height: '14%' },
+    ],
+    xAxis: [0, 1, 2, 3].map(i => ({
+      type: 'time', gridIndex: i, show: i === 3,
+      axisLabel: { hideOverlap: true },
+    })),
+    yAxis: [
+      { scale: true, gridIndex: 0,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 1,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 2,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 2, position: 'right', min: 0,
+        splitLine: { show: false } },
+      { scale: true, gridIndex: 3,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1, 2, 3], minValueSpan: MIN_SPAN_MS },
+      { type: 'slider', xAxisIndex: [0, 1, 2, 3], bottom: 8, height: 22,
+        minValueSpan: MIN_SPAN_MS },
+    ],
+    series: [
+      // 图1: K线 + 布林带 + 斐波那契
+      { id: 'kline', name: 'COMEX 黄金K线', type: 'candlestick',
+        xAxisIndex: 0, yAxisIndex: 0, data: klineData,
+        itemStyle: {
+          color: COLORS.up, color0: COLORS.down,
+          borderColor: COLORS.up, borderColor0: COLORS.down },
+        markLine: fibMarkLine(ohlc) },
+      { name: 'BOLL 上轨', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+        data: bollUp, showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1, color: COLORS.bollUp, type: 'dashed' },
+        itemStyle: { color: COLORS.bollUp } },
+      { name: 'BOLL 中轨', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+        data: bollMid, showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.2, color: COLORS.bollMid },
+        itemStyle: { color: COLORS.bollMid } },
+      { name: 'BOLL 下轨', type: 'line', xAxisIndex: 0, yAxisIndex: 0,
+        data: bollDn, showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1, color: COLORS.bollDn, type: 'dashed' },
+        itemStyle: { color: COLORS.bollDn } },
+      // 图2: 收盘价 + 均线
+      { name: '收盘价', type: 'line', xAxisIndex: 1, yAxisIndex: 1,
+        data: priceLine, showSymbol: false,
+        lineStyle: { width: 1, color: '#bdc3c7' },
+        itemStyle: { color: '#bdc3c7' } },
+      ...maSeries,
+      // 图3: 金价 vs 开采成本 + 比值
+      { name: 'COMEX 金价', type: 'line', xAxisIndex: 2, yAxisIndex: 2,
+        data: priceLine, showSymbol: false,
+        lineStyle: { width: 1.4, color: COLORS.gold },
+        itemStyle: { color: COLORS.gold } },
+      { name: '平均开采成本 AISC', type: 'line', xAxisIndex: 2, yAxisIndex: 2,
+        data: costLine, showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.4, color: COLORS.cost, type: 'dashed' },
+        itemStyle: { color: COLORS.cost } },
+      { name: '金价/AISC 比值', type: 'line', xAxisIndex: 2, yAxisIndex: 3,
+        data: ratioLine, showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.2, color: COLORS.ratio },
+        itemStyle: { color: COLORS.ratio },
+        markLine: { silent: true, symbol: 'none', animation: false,
+          lineStyle: { color: COLORS.ratio, type: 'dotted', width: 0.8 },
+          label: { fontSize: 10, formatter: '比值 1.0' },
+          data: [{ yAxis: 1 }] } },
+      // 图4: MACD + 信号标注
+      { id: 'dif', name: 'DIF', type: 'line', xAxisIndex: 3, yAxisIndex: 4,
+        data: difData, showSymbol: false,
+        lineStyle: { width: 1.3, color: COLORS.dif },
+        itemStyle: { color: COLORS.dif },
+        markPoint: {
+          symbol: 'pin', animation: false,
+          data: macdMarkers(dates, closes, dif, dea),
+        } },
+      { name: 'DEA', type: 'line', xAxisIndex: 3, yAxisIndex: 4,
+        data: deaData, showSymbol: false,
+        lineStyle: { width: 1.3, color: COLORS.dea },
+        itemStyle: { color: COLORS.dea } },
+      { name: 'MACD 柱', type: 'bar', xAxisIndex: 3, yAxisIndex: 4,
+        data: histData, barMaxWidth: 6,
+        itemStyle: { color: p => (p.value[1] ?? 0) >= 0 ? COLORS.up : COLORS.down },
+        markLine: { silent: true, symbol: 'none', animation: false,
+          lineStyle: { color: '#bdc3c7', width: 0.8 },
+          data: [{ yAxis: 0 }], label: { show: false } } },
+    ],
+  };
+  chart.setOption(option, true);
+}
+
+// 缩放时按可视区间重算斐波那契回撤位
+// 注意: 时间轴上 dataZoom 的 start/end 百分比是按"时间跨度"映射的,
+// 必须按时间切片, 按索引切片会因周末/假期缺口产生位置偏差
+chart.on('datazoom', () => {
+  if (!chartData || !chartData.ohlc || !chartData.ohlc.length) return;
+  const dz = chart.getOption().dataZoom[0];
+  const rows = chartData.ohlc;
+  const t0 = new Date(rows[0][0]).getTime();
+  const t1 = new Date(rows[rows.length - 1][0]).getTime();
+  const span = t1 - t0;
+  const vs = t0 + span * dz.start / 100;
+  const ve = t0 + span * dz.end / 100;
+  const tol = 24 * 3600 * 1000;   // 1 天容差, 覆盖边界上的交易日
+  const visible = rows.filter(r => {
+    const t = new Date(r[0]).getTime();
+    return t >= vs - tol && t <= ve + tol;
+  });
+  chart.setOption({ series: [{ id: 'kline',
+    markLine: fibMarkLine(visible) }] });
+});
+
+// ---------------- 数据加载 / 自动刷新 ----------------
+// 用 <script> 标签加载本地数据文件: file:// 直开不受 CORS 限制
+const elStatus = document.getElementById('updated');
+
+function loadData(manual) {
+  if (manual) elStatus.textContent = '正在刷新数据...';
+  const s = document.createElement('script');
+  s.src = 'data/ta_data.js?t=' + Date.now();
+  s.onload = () => {
+    const ta = window.TA_DATA;
+    if (!ta || !ta.ohlc || !ta.ohlc.length) {
+      elStatus.textContent = '数据为空, 请先运行 ./run.sh ta 生成数据';
+      return;
+    }
+    if (ta.updated === lastUpdated && chartData) {
+      elStatus.textContent = '数据已是最新 (' + ta.updated + ') · 每 '
+          + AUTO_REFRESH_SEC + ' 秒自动检查';
+      return;
+    }
+    lastUpdated = ta.updated;
+    render(ta);
+    elStatus.textContent = '数据更新于 ' + ta.updated + ' · 每 '
+        + AUTO_REFRESH_SEC + ' 秒自动检查';
+  };
+  s.onerror = () => {
+    elStatus.textContent = '数据文件加载失败, 请先运行 ./run.sh ta 生成数据';
+  };
+  document.head.appendChild(s);
+}
+
+document.getElementById('refreshBtn')
+    .addEventListener('click', () => loadData(true));
+window.addEventListener('resize', () => chart.resize());
+// 字体加载完成后尺寸可能再变, load 时再校正一次
+window.addEventListener('load', () => chart.resize());
+setInterval(() => loadData(false), AUTO_REFRESH_SEC * 1000);
+loadData(false);
+</script>
+</body>
+</html>

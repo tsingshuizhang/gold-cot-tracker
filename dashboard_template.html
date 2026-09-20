@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黄金 CFTC COT 持仓看板</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #2c3e50; padding: 20px;
+    display: flex; flex-direction: column;
+  }
+  .container {
+    width: 100%; flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  .header { display: flex; justify-content: space-between; align-items: flex-start;
+            gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: #7f8c8d; font-size: 13px; margin-bottom: 16px; }
+  .pagelink {
+    font-size: 13px; color: #fff; background: #f39c12; padding: 7px 16px;
+    border-radius: 6px; text-decoration: none; white-space: nowrap; margin-top: 2px;
+  }
+  .pagelink:hover { background: #e67e22; }
+
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .card {
+    background: #fff; border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); flex: 1; min-width: 180px;
+  }
+  .card .label { font-size: 12px; color: #95a5a6; margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 600; }
+  .card .delta { font-size: 12px; margin-top: 4px; }
+  .up { color: #c0392b; } .down { color: #27ae60; }
+
+  .toolbar {
+    background: #fff; border-radius: 10px; padding: 12px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px;
+    display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+  }
+  .group { display: flex; align-items: center; gap: 8px; }
+  .group .glabel { font-size: 13px; color: #7f8c8d; }
+  .btn {
+    border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
+    padding: 5px 14px; font-size: 13px; cursor: pointer; color: #2c3e50;
+    transition: all .15s;
+  }
+  .btn:hover { border-color: #f39c12; color: #f39c12; }
+  .btn.active { background: #f39c12; border-color: #f39c12; color: #fff; }
+
+  #chart {
+    background: #fff; border-radius: 10px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    width: 100%; flex: 1; min-height: 320px;
+  }
+  .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>黄金 CFTC COT 持仓看板</h1>
+      <div class="subtitle" id="subtitle">COMEX 黄金期货 · 数据来源: 美国 CFTC 官方</div>
+    </div>
+    <a class="pagelink" href="dashboard_ta.html">技术分析页 (K线 / 均线 / MACD) →</a>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="toolbar">
+    <div class="group">
+      <span class="glabel">时间维度</span>
+      <button class="btn active" data-dim="week">周</button>
+      <button class="btn" data-dim="month">月</button>
+      <button class="btn" data-dim="quarter">季</button>
+      <button class="btn" data-dim="year">年</button>
+    </div>
+    <div class="group">
+      <span class="glabel">时间范围</span>
+      <button class="btn" data-range="1">近 1 年</button>
+      <button class="btn" data-range="3">近 3 年</button>
+      <button class="btn" data-range="5">近 5 年</button>
+      <button class="btn active" data-range="all">全部</button>
+    </div>
+  </div>
+
+  <div id="chart"></div>
+  <div class="note">
+    交易者分类(CFTC Disaggregated 口径):
+    <b>管理基金 Managed Money</b> = 机构大资金/投机主力;
+    <b>生产商/贸易商 Producer/Merchant</b> = 产业商业套保;
+    <b>掉期交易商 Swap Dealers</b> = 做市对冲盘;
+    <b>其他报告 Other Reportables</b> = 中小型投机商;
+    <b>非报告 Non-Reportable</b> = 散户/小机构。<br>
+    COT 报告由美国 CFTC 每周五发布(数据截至当周周二), 原始频率为周;
+    月/季/年维度取该周期最后一期持仓。
+    K线/布林带/斐波那契/均线/MACD 等技术分析已移至
+    <a href="dashboard_ta.html">技术分析页</a>, 两页数据互相独立。
+    图表支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
+  </div>
+</div>
+
+<script>
+// ================= 注入的数据 =================
+const RAW = /*__COT_DATA__*/[];
+const PRICE = /*__PRICE_DATA__*/null;
+const DXY = /*__DXY_DATA__*/null;
+// ============================================
+
+let dim = 'week';
+let range = 'all';
+
+// 先填充卡片再初始化图表: 否则卡片高度计入过晚,
+// 画布会按偏高的容器初始化, 导致底部滑块溢出看不见
+renderCards();
+const chart = echarts.init(document.getElementById('chart'));
+
+const COLORS = {
+  mm: '#e74c3c', pm: '#27ae60', swap: '#2980b9',
+  oth: '#9b59b6', nr: '#7f8c8d', gold: '#f39c12', dxy: '#16a085',
+};
+
+function keyOf(d, dim) {
+  const y = d.slice(0, 4), m = d.slice(5, 7);
+  if (dim === 'month') return y + '-' + m;
+  if (dim === 'quarter') return y + '-Q' + (Math.floor((+m - 1) / 3) + 1);
+  if (dim === 'year') return y;
+  return d;
+}
+
+function rangeCutoff() {
+  if (range === 'all') return null;
+  const c = new Date();
+  c.setFullYear(c.getFullYear() - Number(range));
+  return c;
+}
+
+function getData() {
+  let data = RAW;
+  const cutoff = rangeCutoff();
+  if (cutoff) data = data.filter(r => new Date(r.d) >= cutoff);
+  if (dim === 'week') return data;
+  const g = new Map();           // 后写覆盖先写 => 取周期最后一期
+  for (const r of data) g.set(keyOf(r.d, dim), r);
+  return [...g.values()];
+}
+
+function getPairs(src) {
+  if (!src) return null;
+  const cutoff = rangeCutoff();
+  if (!cutoff) return src;
+  return src.filter(p => new Date(p[0]) >= cutoff);
+}
+
+function fmt(n) { return n == null ? '--' : n.toLocaleString('en-US'); }
+
+function renderCards() {
+  const last = RAW[RAW.length - 1];
+  const prev = RAW[RAW.length - 2];
+  const wow = prev ? last.net - prev.net : null;
+  const ratio = last.oi ? (last.net / last.oi * 100).toFixed(1) + '%' : '--';
+  const deltaHtml = v => v == null ? '' :
+    `<span class="${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '+' : ''}${fmt(v)} 周环比</span>`;
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><div class="label">最新报告日期</div>
+      <div class="value">${last.d}</div></div>
+    <div class="card"><div class="label">管理基金净持仓 (手)</div>
+      <div class="value ${last.net >= 0 ? 'up' : 'down'}">${last.net >= 0 ? '+' : ''}${fmt(last.net)}</div>
+      <div class="delta">${deltaHtml(wow)}</div></div>
+    <div class="card"><div class="label">散户/非报告净持仓 (手)</div>
+      <div class="value ${last.nr >= 0 ? 'up' : 'down'}">${last.nr >= 0 ? '+' : ''}${fmt(last.nr)}</div>
+      <div class="delta">${deltaHtml(prev ? last.nr - prev.nr : null)}</div></div>
+    <div class="card"><div class="label">净多占总持仓</div>
+      <div class="value">${ratio}</div></div>
+    <div class="card"><div class="label">总持仓 Open Interest (手)</div>
+      <div class="value">${fmt(last.oi)}</div>
+      <div class="delta">${deltaHtml(prev ? last.oi - prev.oi : null)}</div></div>`;
+  document.getElementById('subtitle').textContent =
+    `COMEX 黄金期货 · 数据来源: 美国 CFTC 官方 · 最新报告 ${last.d} · 共 ${RAW.length} 期`;
+}
+
+function tipValue(p) {
+  if (p.seriesType === 'candlestick') {
+    const v = p.value;  // [日期, 开, 收, 低, 高]
+    return `开 ${v[1]} / 收 ${v[2]} / 低 ${v[3]} / 高 ${v[4]}`;
+  }
+  if (Array.isArray(p.value)) {
+    return p.value[1] == null ? '--' : Number(p.value[1]).toLocaleString('en-US');
+  }
+  return fmt(p.value);
+}
+
+function render() {
+  const data = getData();
+  const toPair = key => data.map(r => [r.d, r[key]]);
+  const price = getPairs(PRICE);
+  const dxy   = getPairs(DXY);
+
+  const catLine = (name, key, color, extra = {}) => ({
+    name, type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: toPair(key),
+    showSymbol: false, lineStyle: { width: 1.3, color },
+    itemStyle: { color }, ...extra,
+  });
+
+  const option = {
+    animation: false,
+    title: [
+      { text: '管理基金(机构大资金)净持仓' + (price ? ' vs 金价' : ''),
+        left: 80, top: 8, textStyle: { fontSize: 13 } },
+      { text: '各类交易者净持仓对比', left: 80, top: '25%',
+        textStyle: { fontSize: 13 } },
+      { text: '管理基金多空分项', left: 80, top: '41%',
+        textStyle: { fontSize: 13 } },
+      { text: '总持仓 Open Interest', left: 80, top: '54%',
+        textStyle: { fontSize: 13 } },
+      { text: '金价 vs 美元指数 DXY', left: 80, top: '66%',
+        textStyle: { fontSize: 13 } },
+    ],
+    animation: false,
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] },
+      formatter(params) {
+        const d = new Date(params[0].axisValue);
+        let html = `<b>${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}</b>`;
+        for (const p of params) {
+          html += `<br>${p.marker}${p.seriesName}: <b>${tipValue(p)}</b>`;
+        }
+        return html;
+      }
+    },
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    legend: [
+      { data: ['管理基金净持仓'].concat(price ? ['COMEX 金价'] : []),
+        top: 6, right: 80 },
+      { data: ['管理基金(机构)', '生产商/贸易商(套保)', '掉期交易商',
+               '其他报告(中小投机)', '散户/非报告'],
+        top: '25%', right: 80, itemWidth: 14 },
+      { data: ['管理基金多头', '管理基金空头'], top: '41%', right: 80 },
+      { data: ['总持仓 OI'], top: '54%', right: 80 },
+      { data: ['COMEX 金价', '美元指数 DXY'].filter(
+          s => (s === 'COMEX 金价' ? price : dxy)),
+        top: '66%', right: 80 },
+    ],
+    grid: [
+      { left: 80, right: 80, top: 40, height: '18%' },
+      { left: 80, right: 80, top: '27%', height: '12%' },
+      { left: 80, right: 80, top: '43%', height: '9%' },
+      { left: 80, right: 80, top: '56%', height: '8%' },
+      { left: 80, right: 80, top: '68%', height: '23%' },
+    ],
+    xAxis: [0, 1, 2, 3, 4].map(i => ({
+      type: 'time', gridIndex: i, show: i === 4,
+      axisLabel: { hideOverlap: true },
+    })),
+    yAxis: [
+      { scale: true, gridIndex: 0,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 0, position: 'right',
+        show: !!price, splitLine: { show: false } },
+      { scale: true, gridIndex: 1,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 2,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 3,
+        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 4,
+        show: !!price, splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 4, position: 'right',
+        show: !!dxy, splitLine: { show: false } },
+    ],
+    dataZoom: [
+      { type: 'inside', xAxisIndex: [0, 1, 2, 3, 4] },
+      { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4], bottom: 8, height: 22 },
+    ],
+    series: [
+      // 图1: 管理基金净持仓 + 金价
+      { name: '管理基金净持仓', type: 'bar', xAxisIndex: 0, yAxisIndex: 0,
+        data: toPair('net'), barMaxWidth: 14,
+        itemStyle: { color: p => p.value[1] >= 0 ? COLORS.mm : COLORS.pm } },
+      ...(price ? [{
+        name: 'COMEX 金价', type: 'line', xAxisIndex: 0, yAxisIndex: 1,
+        data: price, showSymbol: false,
+        lineStyle: { width: 1.4, color: COLORS.gold },
+        itemStyle: { color: COLORS.gold } }] : []),
+      // 图2: 各类交易者净持仓对比
+      catLine('管理基金(机构)', 'net', COLORS.mm, {
+        markLine: { silent: true, symbol: 'none', animation: false,
+          lineStyle: { color: '#bdc3c7', width: 0.8 },
+          data: [{ yAxis: 0 }], label: { show: false } } }),
+      catLine('生产商/贸易商(套保)', 'pm', COLORS.pm),
+      catLine('掉期交易商', 'sw', COLORS.swap),
+      catLine('其他报告(中小投机)', 'oth', COLORS.oth),
+      catLine('散户/非报告', 'nr', COLORS.nr,
+        { lineStyle: { width: 1.3, color: COLORS.nr, type: 'dashed' } }),
+      // 图3: 多空分项
+      { name: '管理基金多头', type: 'line', xAxisIndex: 2, yAxisIndex: 3,
+        data: toPair('lo'), showSymbol: false,
+        lineStyle: { width: 1.3, color: COLORS.mm },
+        itemStyle: { color: COLORS.mm } },
+      { name: '管理基金空头', type: 'line', xAxisIndex: 2, yAxisIndex: 3,
+        data: toPair('sh'), showSymbol: false,
+        lineStyle: { width: 1.3, color: COLORS.pm },
+        itemStyle: { color: COLORS.pm } },
+      // 图4: 总持仓
+      { name: '总持仓 OI', type: 'line', xAxisIndex: 3, yAxisIndex: 4,
+        data: toPair('oi'), showSymbol: false, areaStyle: { opacity: 0.25 },
+        lineStyle: { width: 1.2, color: COLORS.swap },
+        itemStyle: { color: COLORS.swap } },
+      // 图5: 金价 vs 美元指数
+      ...(price ? [{
+        name: 'COMEX 金价', type: 'line', xAxisIndex: 4, yAxisIndex: 5,
+        data: price, showSymbol: false,
+        lineStyle: { width: 1.4, color: COLORS.gold },
+        itemStyle: { color: COLORS.gold } }] : []),
+      ...(dxy ? [{
+        name: '美元指数 DXY', type: 'line', xAxisIndex: 4, yAxisIndex: 6,
+        data: dxy, showSymbol: false,
+        lineStyle: { width: 1.4, color: COLORS.dxy },
+        itemStyle: { color: COLORS.dxy } }] : []),
+    ],
+  };
+  chart.setOption(option, true);
+}
+
+document.querySelectorAll('[data-dim]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-dim]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    dim = btn.dataset.dim;
+    render();
+  });
+});
+document.querySelectorAll('[data-range]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-range]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    range = btn.dataset.range;
+    render();
+  });
+});
+
+window.addEventListener('resize', () => chart.resize());
+// 字体加载完成后尺寸可能再变, load 时再校正一次
+window.addEventListener('load', () => chart.resize());
+render();
+</script>
+</body>
+</html>

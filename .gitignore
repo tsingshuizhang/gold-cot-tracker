@@ -1,0 +1,5 @@
+__pycache__/
+.DS_Store
+data/cache/
+charts/
+data/gold_cot_*.csv

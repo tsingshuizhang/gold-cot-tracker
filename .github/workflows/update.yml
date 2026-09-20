@@ -1,0 +1,38 @@
+# 定时更新看板数据并发布到 GitHub Pages
+# 触发: 每天 UTC 23:30 (北京时间次日 07:30); COT 每周五 15:30 ET 发布后当天即可带上
+# 手动触发: Actions 页面点 "Run workflow"
+name: update-data
+
+on:
+  schedule:
+    - cron: '30 23 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install yfinance
+
+      - name: 抓取数据并生成看板 (增量缓存, 只补缺失数据)
+        run: python gold_cot.py dashboard --weeks 520
+
+      - name: 提交更新后的数据文件
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard.html dashboard_ta.html \
+                  data/ta_data.js data/ta_ohlc.json data/dxy_daily.json
+          git diff --cached --quiet || \
+            git commit -m "chore: 定时更新看板数据 [skip ci]"
+          git push
