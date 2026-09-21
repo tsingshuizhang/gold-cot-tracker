@@ -20,22 +20,44 @@ jobs:
           curl -s -o /dev/null -w "%{http_code}\n" --max-time 20 \
             -H "User-Agent: Mozilla/5.0" \
             "https://query1.finance.yahoo.com/v8/finance/chart/GC=F" || echo "CONNECT FAIL"
-      - name: 安装 yfinance 并测试期权链
+      - name: 测试 Yahoo 直连 (cookie+crumb, 绕过 yfinance)
         run: |
-          pip -q install yfinance
           python - <<'EOF'
-          import traceback
+          import http.cookiejar, json, traceback, urllib.request
           try:
-              import yfinance as yf
-              print("yfinance", yf.__version__)
-              t = yf.Ticker("GC=F")
-              exps = list(t.options)
-              print("expiries:", exps[:3])
-              if exps:
-                  ch = t.option_chain(exps[0])
-                  cv = ch.calls["volume"].fillna(0).sum()
-                  pv = ch.puts["volume"].fillna(0).sum()
-                  print(f"PCR sample: {pv/cv:.3f} (put {pv} / call {cv})")
+              UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0"
+              cj = http.cookiejar.CookieJar()
+              op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+              op.addheaders = [("User-Agent", UA)]
+              # 1. 拿 cookie
+              try:
+                  op.open("https://fc.yahoo.com", timeout=15).read()
+              except Exception as e:
+                  print("fc.yahoo.com (cookie 预置):", type(e).__name__)
+              print("cookies:", [c.name for c in cj])
+              # 2. 拿 crumb
+              crumb = op.open("https://query1.finance.yahoo.com/v1/test/getcrumb",
+                              timeout=15).read().decode()
+              print("crumb:", crumb[:12], "...")
+              # 3. 期权链
+              url = ("https://query1.finance.yahoo.com/v7/finance/options/GC=F"
+                     f"?crumb={crumb}")
+              payload = json.loads(op.open(url, timeout=20).read())
+              res = payload["optionChain"]["result"]
+              exps = res[0]["expirationDates"] if res else []
+              print("expiries count:", len(exps))
+              pv = cv = 0.0
+              for ts in exps[:2]:
+                  u = ("https://query1.finance.yahoo.com/v7/finance/options/GC=F"
+                       f"?crumb={crumb}&expiration={ts}")
+                  p2 = json.loads(op.open(u, timeout=20).read())
+                  opts = p2["optionChain"]["result"][0]["options"][0]
+                  for opt, side in ((opts.get("calls", []), "c"), (opts.get("puts", []), "p")):
+                      for o in opt:
+                          v = o.get("volume") or 0
+                          if side == "c": cv += v
+                          else: pv += v
+              print(f"vol PCR = {pv/cv:.3f}  (put {pv:.0f} / call {cv:.0f})")
           except Exception:
               traceback.print_exc()
           EOF
