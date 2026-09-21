@@ -33,8 +33,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add dashboard.html dashboard_ta.html \
-                  data/ta_data.js data/ta_ohlc.json data/dxy_daily.json
+          git add dashboard.html dashboard_ta.html data/
           git diff --cached --quiet || \
             git commit -m "chore: 定时更新看板数据 [skip ci]"
           git push

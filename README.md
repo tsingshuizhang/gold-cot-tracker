@@ -19,6 +19,12 @@
 - 黄金合约: `GOLD - COMMODITY EXCHANGE INC.`, CFTC 市场代码 `088691`
 - 金价/美元指数: 东方财富 API 优先(黄金 `101.GC00Y`, 美元指数 `100.UDI`),
   Yahoo Finance (`GC=F` / `DX-Y.NYB`) 备用
+- **黄金期权 PCR**: 上期所沪金期权官方日行情
+  (`shfe.com.cn/data/tradedata/option/dailydata/kx{日期}.dat`), 主源;
+  单线程顺序增量抓取 (并发高频请求会触发源站限流),
+  休市日记入 gaps 缓存不再重复请求;
+  COMEX 黄金期权 PCR 来自 Barchart(历史回填)/ Yahoo 期权链快照(逐日累积),
+  属 best-effort 备用源 (两源均受限时自动降级, 看板隐藏该线)
 
 COT 报告每周五发布(数据截至当周周二)。
 
@@ -66,6 +72,11 @@ python gold_cot.py all                   # 一次全部执行
 3. **管理基金多空分项** — 多头/空头持仓分别展示
 4. **总持仓 Open Interest** — 市场总体热度
 5. **金价 vs 美元指数 DXY** — 双轴对照
+6. **黄金期权 PCR (看跌/看涨)** — 沪金期权成交量 PCR 与持仓量 PCR
+   (上期所官方日频, 2024-03 起); COMEX 黄金期权 PCR (Barchart/Yahoo) 可用时并列显示;
+   灰色虚线为 PCR = 1 基准线, 高于 1 表示看跌成交/持仓多于看涨, 情绪偏空;
+   点击图例**单独显示**某条沪金 PCR 时, 自动叠加 ±1σ 标准差上下轨
+   (灰色虚线, 滚动 60 日窗口)
 
 交互功能: 时间维度切换 (周/月/季/年, 月/季/年取周期最后一期)、
 时间范围 (近 1/3/5 年/全部)、滚轮缩放 + 底部滑块、点击图例显隐分项。
@@ -111,6 +122,8 @@ MACD 参数 (12, 26, 9), `DIF = EMA12 − EMA26`, `DEA = EMA(DIF, 9)`,
 - `dashboard_ta.html` + `data/ta_data.js` — 技术分析页及其数据文件
 - `data/ta_ohlc.json` — 黄金日频 OHLC 增量缓存 (已有数据不重复抓取)
 - `data/dxy_daily.json` — 美元指数日频收盘价增量缓存 (同上策略)
+- `data/gold_pcr_shfe.json` — 沪金期权 PCR 日频增量缓存 (磁盘永久保留全部历史)
+- `data/gold_pcr_comex.json` — COMEX 期权 PCR 缓存 (best-effort, 可能不存在)
 - `data/gold_cot_disaggregated.csv` — 管理基金/生产商/掉期商分项持仓
 - `data/gold_cot_legacy.csv` — 商业/非商业传统分类持仓
 - `data/cache/` — CFTC 年度 zip 缓存
@@ -127,3 +140,5 @@ MACD 参数 (12, 26, 9), `DIF = EMA12 − EMA26`, `DEA = EMA(DIF, 9)`,
 | `nr_net` | 非报告(散户/小机构)净持仓 |
 | `*_wow` | 周环比变化 |
 | `pct_oi_mm_long` | 管理基金多头占总持仓比例, 衡量拥挤度 |
+| `PCR (成交量)` | 沪金期权看跌成交量 / 看涨成交量, >1 偏空, <1 偏多 |
+| `PCR (持仓量)` | 沪金期权看跌持仓量 / 看涨持仓量, 变化更平缓, 反映中期情绪 |

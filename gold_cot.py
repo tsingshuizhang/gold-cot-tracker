@@ -23,11 +23,13 @@
 
 import argparse
 import csv
+import gzip
 import io
 import json
 import os
 import ssl
 import sys
+import time
 import urllib.parse
 import urllib.request
 import zipfile
@@ -67,6 +69,14 @@ LEGACY_ZIP_URL = "https://www.cftc.gov/files/dea/history/deacot{year}.zip"
 GOLD_MARKET_CODE = "088691"           # GOLD - COMMODITY EXCHANGE INC.
 
 USER_AGENT = "gold-cot-tracker/1.0 (personal research)"
+
+# 上期所(沪金期权)日行情: 官方 JSON, 含全部期权合约明细
+# OPTIONSTYPE: 1=看涨, 2=看跌; PRODUCTGROUPID=au 即沪金期权
+SHFE_OPT_KX_URL = ("https://www.shfe.com.cn/data/tradedata/option/"
+                   "dailydata/kx{date}.dat?params={ts}")
+
+# 沪金期权上市日 (2022-12-26), 更早的日期没有数据
+SHFE_AU_OPT_LIST_DATE = "2022-12-26"
 
 # Legacy 压缩文件的表头 -> Socrata 风格字段名
 LEGACY_ZIP_HEADER_MAP = {
@@ -613,6 +623,266 @@ def fetch_gold_ohlc(weeks: int):
 
 
 # ---------------------------------------------------------------------------
+# 黄金期权 PCR (Put/Call Ratio)
+# ---------------------------------------------------------------------------
+
+SHFE_PCR_CACHE = DATA_DIR / "gold_pcr_shfe.json"
+COMEX_PCR_CACHE = DATA_DIR / "gold_pcr_comex.json"
+
+
+def _fetch_shfe_gold_pcr_one(date8: str):
+    """抓取单日沪金期权 PCR。
+
+    返回 (row, status): row 为 [YYYY-MM-DD, 成交量PCR, 持仓量PCR] 或 None;
+    status: "ok" 有数据 / "nodata" 源站确认无数据(非交易日或期权未上市)
+            / "error" 网络失败。PCR = 看跌 / 看涨。
+    """
+    url = SHFE_OPT_KX_URL.format(date=date8, ts=int(time.time() * 1000))
+    req = urllib.request.Request(url, headers={
+        "User-Agent": USER_AGENT, "Accept-Encoding": "gzip"})
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=SSL_CTX) as resp:
+            raw = resp.read()
+            if resp.headers.get("Content-Encoding") == "gzip":
+                raw = gzip.decompress(raw)
+    except urllib.error.HTTPError as exc:
+        # 非交易日: 源站返回 404 (gzip 压缩的 HTML 页)
+        if exc.code == 404:
+            return None, "nodata"
+        return None, "error"
+    except Exception:  # noqa: BLE001
+        return None, "error"
+    # 非交易日返回的是 HTML 404 页
+    if not raw.startswith(b"{"):
+        return None, "nodata"
+    try:
+        payload = json.loads(raw)
+    except Exception:  # noqa: BLE001
+        return None, "error"
+    pv = cv = po = co = 0
+    for r in payload.get("o_curinstrument") or []:
+        if r.get("PRODUCTGROUPID") != "au":
+            continue
+        vol = r.get("VOLUME") or 0
+        oi = r.get("OPENINTEREST") or 0
+        if r.get("OPTIONSTYPE") == "1":      # 看涨
+            cv += vol
+            co += oi
+        elif r.get("OPTIONSTYPE") == "2":    # 看跌
+            pv += vol
+            po += oi
+    if not co:                    # 源站无沪金期权数据(休市或尚未上市)
+        return None, "nodata"
+    pcr_oi = round(po / co, 3)
+    pcr_vol = round(pv / cv, 3) if cv else None
+    return [f"{date8[:4]}-{date8[4:6]}-{date8[6:]}", pcr_vol, pcr_oi], "ok"
+
+
+def fetch_shfe_pcr_incremental(weeks: int):
+    """沪金期权 PCR 日频序列, 带本地增量缓存 (策略同黄金 OHLC)。
+
+    每次只补缓存中缺失的日期, 已有历史绝不重复抓取;
+    源站确认无数据的日期 (周末/节假日/上市前) 记入 gaps, 不再重复请求;
+    返回 [[日期, 成交量PCR, 持仓量PCR], ...] (按日期升序)。
+    """
+    cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
+              ).strftime("%Y-%m-%d")
+    cutoff = max(cutoff, SHFE_AU_OPT_LIST_DATE)
+    # 磁盘缓存永久保留全部历史 (重抓历史成本高), 运行期再按窗口过滤;
+    # 文件结构: {"rows": [[日期, 成交量PCR, 持仓量PCR]...],
+    #            "gaps": [源站确认无数据的日期...]}
+    stored: list[list] = []
+    gaps: list[str] = []
+    if SHFE_PCR_CACHE.exists():
+        try:
+            blob = json.loads(SHFE_PCR_CACHE.read_text(encoding="utf-8"))
+            if isinstance(blob, dict):
+                stored, gaps = blob.get("rows") or [], blob.get("gaps") or []
+            else:                       # 兼容旧格式: 纯 rows 列表
+                stored = blob
+        except Exception:  # noqa: BLE001
+            stored, gaps = [], []
+    stored = [r for r in stored
+              if isinstance(r, list) and len(r) == 3 and r[0] >= SHFE_AU_OPT_LIST_DATE]
+    cached = [r for r in stored if r[0] >= cutoff]
+
+    today = datetime.now()
+    # 补齐窗口 [cutoff, today] 内所有缺失日期 (只请求缺失日,
+    # 因此先用小窗口跑过, 再切换大窗口时也会回补中间历史)
+    have = {r[0] for r in stored}
+    no_data = set(gaps)
+    days = []
+    d = datetime.strptime(cutoff, "%Y-%m-%d")
+    while d <= today:
+        if d.strftime("%Y-%m-%d") not in have | no_data:
+            days.append(d)
+        d += timedelta(days=1)
+    if not days:
+        print("  [缓存] 沪金期权 PCR 已覆盖抓取窗口, 无需重复抓取")
+        return cached
+    print(f"  [增量] 沪金期权 PCR 补齐 {days[0]:%Y-%m-%d} ~ "
+          f"{days[-1]:%Y-%m-%d} 内 {len(days)} 个缺失日", flush=True)
+
+    # 单线程顺序抓取: 并发高频请求会触发源站限流(连接挂起直至超时)
+    fetched: dict[str, list] = {}
+    consecutive_errors = 0
+    for i, d0 in enumerate(days):
+        r, status = _fetch_shfe_gold_pcr_one(d0.strftime("%Y%m%d"))
+        if r:
+            fetched[r[0]] = r
+            consecutive_errors = 0
+        elif status == "nodata":   # 源站确认无数据, 记录后不再请求
+            gaps.append(d0.strftime("%Y-%m-%d"))
+            consecutive_errors = 0
+        else:
+            consecutive_errors += 1
+            if consecutive_errors >= 5:
+                print("  [提示] 连续多次请求失败, 疑似网络受限或源站限流,"
+                      " 提前中止; 已抓数据已保存, 请稍后重试")
+                break
+        if len(days) > 30 and (i + 1) % 50 == 0:
+            print(f"    进度 {i + 1}/{len(days)}", flush=True)
+
+    merged = {r[0]: r for r in stored}
+    merged.update(fetched)
+    rows = sorted(merged.values(), key=lambda r: r[0])
+    if fetched or gaps:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        SHFE_PCR_CACHE.write_text(json.dumps(
+            {"rows": rows, "gaps": sorted(set(gaps))}, ensure_ascii=False),
+            encoding="utf-8")
+    out = [r for r in rows if r[0] >= cutoff]
+    print(f"  [完成] 沪金期权 PCR 共 {len(out)} 条 (本次新增 {len(fetched)})")
+    if not stored and not fetched:
+        print("  [提示] 未获取到任何数据, 请检查网络;"
+              " 若报证书错误请安装 certifi: pip install certifi")
+    return out
+
+
+def _fetch_comex_pcr_yahoo_snapshot() -> list[list] | None:
+    """Yahoo 期权链当日快照: 汇总 GC=F 最近 2 个到期月的看涨/看跌成交量。
+
+    期权链只有当前快照、没有历史, 只能补当天这一条;
+    配合 CI 每日运行可逐日累积出时间序列。任何失败返回 None。
+    """
+    try:
+        import yfinance as yf
+        t = yf.Ticker("GC=F")
+        pv = cv = 0.0
+        used = 0
+        for exp in list(t.options)[:2]:
+            ch = t.option_chain(exp)
+            cv += float(ch.calls["volume"].fillna(0).sum())
+            pv += float(ch.puts["volume"].fillna(0).sum())
+            used += 1
+        if not used or cv <= 0:
+            return None
+        return [[datetime.now().strftime("%Y-%m-%d"), round(pv / cv, 3)]]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def fetch_comex_pcr(weeks: int) -> list[list] | None:
+    """COMEX 黄金期权 PCR, best-effort, 双数据源自动互补:
+
+    1. Barchart 历史序列 (可一次回填整段历史, 但有反爬/区域限制)
+    2. Yahoo 期权链当日快照 (无历史, 只补当天; CI 每日运行逐日累积)
+
+    返回 [[日期, 成交量PCR], ...] (按日期升序); 全部失败返回旧缓存或 None,
+    不影响看板其余部分。
+    """
+    rows = _fetch_comex_pcr_barchart(weeks)
+    # Barchart 拿不到最新交易日(或整体失败只剩旧缓存)时, 用 Yahoo 快照补当天
+    today = datetime.now().strftime("%Y-%m-%d")
+    last = rows[-1][0] if rows else None
+    if last != today:
+        snap = _fetch_comex_pcr_yahoo_snapshot()
+        if snap:
+            merged = {r[0]: r for r in (rows or [])}
+            merged.update({r[0]: r for r in snap})
+            rows = sorted(merged.values(), key=lambda r: r[0])
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            COMEX_PCR_CACHE.write_text(json.dumps(rows, ensure_ascii=False),
+                                       encoding="utf-8")
+    return rows or None
+
+
+def _fetch_comex_pcr_barchart(weeks: int):
+    """COMEX 黄金期权 PCR (Barchart 数据源), best-effort。
+
+    Barchart 有反爬/区域限制, 任何一步失败都静默降级:
+    返回旧缓存数据或 None, 不影响看板其余部分。
+    数据可用时缓存到 data/gold_pcr_comex.json。
+    """
+    cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
+              ).strftime("%Y-%m-%d")
+    cached: list[list] = []
+    if COMEX_PCR_CACHE.exists():
+        try:
+            cached = json.loads(COMEX_PCR_CACHE.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            cached = []
+    cached = [r for r in cached
+              if isinstance(r, list) and len(r) == 2 and r[0] >= cutoff]
+
+    today = datetime.now()
+    last = cached[-1][0] if cached else None
+    if last and (today - datetime.strptime(last, "%Y-%m-%d")).days <= 3:
+        return cached
+
+    try:
+        import http.cookiejar
+        cj = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(cj))
+        opener.addheaders = [
+            ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/120.0 Safari/537.36"),
+            ("Accept", "application/json, text/plain, */*"),
+        ]
+        # 取最近交割月合约符号, 如 GCV26 (2026年10月)
+        sym = "GC" + today.strftime("%y%m")
+        page = opener.open(
+            f"https://www.barchart.com/futures/quotes/{sym}/"
+            "options/put-call-ratios", timeout=20)
+        page.read()
+        xsrf = next((c.value for c in cj if c.name == "XSRF-TOKEN"), None)
+        if not xsrf:
+            return cached or None
+        # 一次请求拉全窗口区间, 源站自然补齐历史缺口
+        beg = today - timedelta(days=weeks * 7 + 10)
+        url = ("https://www.barchart.com/proxies/core-api/v1/historical/get"
+               f"?symbol={sym}&fields=symbol,timestamp,putCallRatio"
+               f"&startDate={beg:%Y-%m-%d}&endDate={today:%Y-%m-%d}"
+               "&orderBy=timestamp&orderDir=asc")
+        req = urllib.request.Request(
+            url, headers={"X-XSRF-TOKEN": urllib.parse.unquote(xsrf)})
+        payload = json.loads(opener.open(req, timeout=20).read())
+        raw_rows = (payload.get("data") or payload.get("results")
+                    or payload.get("dataList") or [])
+        new_rows = []
+        for r in raw_rows:
+            ts = r.get("timestamp")
+            pcr = r.get("putCallRatio")
+            if ts is None or pcr is None:
+                continue
+            d0 = datetime.fromtimestamp(
+                ts / 1000 if ts > 10**11 else ts).strftime("%Y-%m-%d")
+            new_rows.append([d0, round(float(pcr), 3)])
+        merged = {r[0]: r for r in cached}
+        merged.update({r[0]: r for r in new_rows})
+        rows = sorted(merged.values(), key=lambda r: r[0])
+        if new_rows:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            COMEX_PCR_CACHE.write_text(json.dumps(rows, ensure_ascii=False),
+                                       encoding="utf-8")
+        return rows
+    except Exception:  # noqa: BLE001
+        return cached or None
+
+
+# ---------------------------------------------------------------------------
 # 图表
 # ---------------------------------------------------------------------------
 
@@ -849,6 +1119,15 @@ def cmd_dashboard(weeks: int) -> None:
                   else fetch_price_pairs("GC=F", "101.GC00Y", weeks, "黄金价格"))
     dxy_data = fetch_dxy_pairs_incremental(weeks)
 
+    # 黄金期权 PCR: 沪金期权(上期所官方, 主源) + COMEX(Barchart, best-effort)
+    print("正在抓取黄金期权 PCR ...")
+    pcr_shfe = fetch_shfe_pcr_incremental(weeks)
+    pcr_comex = fetch_comex_pcr(weeks)
+    if not pcr_comex:
+        print("  [提示] COMEX 期权 PCR 暂不可用 (Barchart/Yahoo 均受限),"
+              " 看板将只显示沪金期权 PCR")
+    pcr_data = {"shfe": pcr_shfe or [], "comex": pcr_comex or None}
+
     tpl_path = BASE_DIR / "dashboard_template.html"
     html = tpl_path.read_text(encoding="utf-8")
     html = html.replace("/*__COT_DATA__*/[]",
@@ -857,6 +1136,8 @@ def cmd_dashboard(weeks: int) -> None:
                         json.dumps(dxy_data, ensure_ascii=False))
     html = html.replace("/*__PRICE_DATA__*/null",
                         json.dumps(price_data, ensure_ascii=False))
+    html = html.replace("/*__PCR_DATA__*/null",
+                        json.dumps(pcr_data, ensure_ascii=False))
 
     out = BASE_DIR / "dashboard.html"
     out.write_text(html, encoding="utf-8")

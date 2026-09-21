@@ -66,7 +66,7 @@
     html, body { height: auto; }
     body { display: block; padding: 10px; }
     .container { flex: none; display: block; min-height: 0; }
-    #chart { flex: none; height: 560px; min-height: 0; }
+    #chart { flex: none; height: 760px; min-height: 0; }
     h1 { font-size: 18px; }
     .header { gap: 10px; }
     .pagelink { padding: 6px 10px; font-size: 12px; }
@@ -84,7 +84,7 @@
   }
   /* 横屏(矮屏): 图表再加高 */
   @media (max-height: 500px) {
-    #chart { height: 640px; }
+    #chart { height: 840px; }
   }
 </style>
 </head>
@@ -126,7 +126,13 @@
     <b>其他报告 Other Reportables</b> = 中小型投机商;
     <b>非报告 Non-Reportable</b> = 散户/小机构。<br>
     COT 报告由美国 CFTC 每周五发布(数据截至当周周二), 原始频率为周;
-    月/季/年维度取该周期最后一期持仓。
+    月/季/年维度取该周期最后一期持仓。<br>
+    <b>黄金期权 PCR</b>(看跌/看涨): 沪金期权为上期所官方日频数据
+    (成交量与持仓量两个口径); COMEX 期权 PCR 来自 Barchart,
+    源站反爬/网络受限时该线自动隐藏。
+    PCR &gt; 1 表示看跌成交/持仓多于看涨, 市场情绪偏空; 反之偏多。<br>
+    点击图例<b>单独显示</b>成交量或持仓量 PCR 时, 会自动叠加 ±1σ 标准差上下轨
+    (灰色虚线, 滚动 60 日窗口); COMEX 期权 PCR 来自 Barchart/Yahoo, 不可用时自动隐藏。<br>
     K线/布林带/斐波那契/均线/MACD 等技术分析已移至
     <a href="dashboard_ta.html">技术分析页</a>, 两页数据互相独立。
     图表支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
@@ -142,10 +148,45 @@
 const RAW = /*__COT_DATA__*/[];
 const PRICE = /*__PRICE_DATA__*/null;
 const DXY = /*__DXY_DATA__*/null;
+// {shfe: [[日期, 成交量PCR, 持仓量PCR], ...], comex: [[日期, PCR], ...]}
+const PCR = /*__PCR_DATA__*/null;
 // ============================================
 
 let dim = 'week';
 let range = 'all';
+// 图例选择状态 (跨重绘保持, 供 PCR 标准差轨道显隐判断)
+let legendSel = {};
+// PCR 标准差轨道: 图例单独显示 成交量PCR 或 持仓量PCR 时叠加 ±1σ 轨道
+const PCR_BAND_WIN = 60;   // 滚动窗口 (≈3 个月交易日)
+const PCR_BAND_MIN = 20;   // 窗口内最少样本数, 不足不出轨
+let pcrBandOn = false;     // 当前轨道是否有数据 (供重绘时恢复)
+let lastPcrVol = [];       // 最近一次的 PCR 序列 (图例事件里算轨道用)
+let lastPcrOi = [];
+
+// 滚动均值 ± 1σ 上下轨; pair 为 [[日期, 值], ...] (按日期升序)
+function pcrStdBands(pair) {
+  const up = [], lo = [];
+  const win = [];
+  let sum = 0, sq = 0;
+  for (const [d, v] of pair) {
+    if (v != null) {
+      win.push(v); sum += v; sq += v * v;
+      if (win.length > PCR_BAND_WIN) {
+        const o = win.shift(); sum -= o; sq -= o * o;
+      }
+    }
+    if (win.length >= PCR_BAND_MIN) {
+      const m = sum / win.length;
+      const sd = Math.sqrt(Math.max(0, sq / win.length - m * m));
+      up.push([d, +(m + sd).toFixed(3)]);
+      lo.push([d, +(m - sd).toFixed(3)]);
+    } else {
+      up.push([d, null]);
+      lo.push([d, null]);
+    }
+  }
+  return { up, lo };
+}
 
 // 先填充卡片再初始化图表: 否则卡片高度计入过晚,
 // 画布会按偏高的容器初始化, 导致底部滑块溢出看不见
@@ -232,6 +273,22 @@ function render() {
   const toPair = key => data.map(r => [r.d, r[key]]);
   const price = getPairs(PRICE);
   const dxy   = getPairs(DXY);
+  // 黄金期权 PCR: 沪金期权(成交量/持仓量两个口径) + COMEX(best-effort)
+  const pcrS = getPairs(PCR && PCR.shfe);
+  const pcrC = getPairs(PCR && PCR.comex);
+  const pcrVol = pcrS ? pcrS.map(r => [r[0], r[1]]) : null;
+  const pcrOi  = pcrS ? pcrS.map(r => [r[0], r[2]]) : null;
+
+  // 标准差轨道: 两条沪金 PCR 中恰好单独显示一条时, 给它叠加 ±1σ 轨道
+  // 轨道序列始终存在(默认空数据), 图例切换时只更新数据, 不整体重绘
+  const volOn = legendSel['沪金期权成交量 PCR'] !== false;
+  const oiOn  = legendSel['沪金期权持仓量 PCR'] !== false;
+  const bandSrc = (pcrVol && volOn && !oiOn) ? pcrVol
+                : (pcrOi && oiOn && !volOn) ? pcrOi : null;
+  const band = bandSrc ? pcrStdBands(bandSrc) : null;
+  pcrBandOn = !!band;
+  lastPcrVol = pcrVol || [];
+  lastPcrOi = pcrOi || [];
 
   // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
@@ -247,14 +304,16 @@ function render() {
     animation: false,
     title: [
       { text: '管理基金(机构大资金)净持仓' + (price ? ' vs 金价' : ''),
-        left: 60, top: 8, textStyle: { fontSize: narrow ? 10 : 13 } },
-      { text: '各类交易者净持仓对比', left: 60, top: '25%',
+        left: 60, top: 6, textStyle: { fontSize: narrow ? 10 : 13 } },
+      { text: '各类交易者净持仓对比', left: 60, top: '21%',
         textStyle: { fontSize: narrow ? 10 : 13 } },
-      { text: '管理基金多空分项', left: 60, top: '41%',
+      { text: '管理基金多空分项', left: 60, top: '34%',
         textStyle: { fontSize: narrow ? 10 : 13 } },
-      { text: '总持仓 Open Interest', left: 60, top: '54%',
+      { text: '总持仓 Open Interest', left: 60, top: '45%',
         textStyle: { fontSize: narrow ? 10 : 13 } },
-      { text: '金价 vs 美元指数 DXY', left: 60, top: '66%',
+      { text: '金价 vs 美元指数 DXY', left: 60, top: '55%',
+        textStyle: { fontSize: narrow ? 10 : 13 } },
+      { text: '黄金期权 PCR (看跌/看涨)', left: 60, top: '76%',
         textStyle: { fontSize: narrow ? 10 : 13 } },
     ],
     animation: false,
@@ -273,26 +332,30 @@ function render() {
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     legend: [
       { data: ['管理基金净持仓'].concat(price ? ['COMEX 金价'] : []),
-        top: 6, right: 48, show: !narrow },
+        top: 4, right: 48, show: !narrow },
       { data: ['管理基金(机构)', '生产商/贸易商(套保)', '掉期交易商',
                '其他报告(中小投机)', '散户/非报告'],
-        top: '25%', right: 48, itemWidth: 14, show: !narrow },
-      { data: ['管理基金多头', '管理基金空头'], top: '41%', right: 48,
+        top: '21%', right: 48, itemWidth: 14, show: !narrow },
+      { data: ['管理基金多头', '管理基金空头'], top: '34%', right: 48,
         show: !narrow },
-      { data: ['总持仓 OI'], top: '54%', right: 48, show: !narrow },
+      { data: ['总持仓 OI'], top: '45%', right: 48, show: !narrow },
       { data: ['COMEX 金价', '美元指数 DXY'].filter(
           s => (s === 'COMEX 金价' ? price : dxy)),
-        top: '66%', right: 48, show: !narrow },
+        top: '55%', right: 48, show: !narrow },
+      { data: ['沪金期权成交量 PCR', '沪金期权持仓量 PCR']
+          .concat(pcrC && pcrC.length ? ['COMEX 期权 PCR'] : []),
+        top: '76%', right: 48, itemWidth: 14, show: !narrow },
     ],
     grid: [
-      { left: 60, right: 48, top: 40, height: '18%' },
-      { left: 60, right: 48, top: '27%', height: '12%' },
-      { left: 60, right: 48, top: '43%', height: '9%' },
-      { left: 60, right: 48, top: '56%', height: '8%' },
-      { left: 60, right: 48, top: '68%', height: '23%' },
+      { left: 60, right: 48, top: 34, height: '14%' },
+      { left: 60, right: 48, top: '22%', height: '10%' },
+      { left: 60, right: 48, top: '35%', height: '8%' },
+      { left: 60, right: 48, top: '46%', height: '7%' },
+      { left: 60, right: 48, top: '56%', height: '18%' },
+      { left: 60, right: 48, top: '77%', height: '16%' },
     ],
-    xAxis: [0, 1, 2, 3, 4].map(i => ({
-      type: 'time', gridIndex: i, show: i === 4,
+    xAxis: [0, 1, 2, 3, 4, 5].map(i => ({
+      type: 'time', gridIndex: i, show: i === 4 || i === 5,
       axisLabel: { hideOverlap: true },
     })),
     yAxis: [
@@ -310,10 +373,12 @@ function render() {
         show: !!price, splitLine: { lineStyle: { type: 'dashed' } } },
       { scale: true, gridIndex: 4, position: 'right',
         show: !!dxy, splitLine: { show: false } },
+      { scale: true, gridIndex: 5, min: 0,
+        splitLine: { lineStyle: { type: 'dashed' } } },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2, 3, 4] },
-      { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4], bottom: 8, height: 22 },
+      { type: 'inside', xAxisIndex: [0, 1, 2, 3, 4, 5] },
+      { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4, 5], bottom: 8, height: 22 },
     ],
     series: [
       // 图1: 管理基金净持仓 + 金价
@@ -360,9 +425,54 @@ function render() {
         data: dxy, showSymbol: false,
         lineStyle: { width: 1.4, color: COLORS.dxy },
         itemStyle: { color: COLORS.dxy } }] : []),
+      // 图6: 黄金期权 PCR (看跌/看涨, >1 偏空情绪, <1 偏多情绪)
+      ...(pcrVol ? [{
+        name: '沪金期权成交量 PCR', type: 'line', xAxisIndex: 5, yAxisIndex: 7,
+        data: pcrVol, showSymbol: false, connectNulls: true,
+        lineStyle: { width: 1.5, color: '#c0392b' },
+        itemStyle: { color: '#c0392b' },
+        markLine: { silent: true, symbol: 'none', animation: false,
+          lineStyle: { color: '#bdc3c7', width: 0.8, type: 'dashed' },
+          data: [{ yAxis: 1 }],
+          label: { show: true, formatter: '1.0', fontSize: 10,
+                   color: '#95a5a6', position: 'insideEndTop' } },
+      }] : []),
+      ...(pcrOi ? [{
+        name: '沪金期权持仓量 PCR', type: 'line', xAxisIndex: 5, yAxisIndex: 7,
+        data: pcrOi, showSymbol: false,
+        lineStyle: { width: 1.2, color: '#e67e22', type: 'dashed' },
+        itemStyle: { color: '#e67e22' },
+      }] : []),
+      ...(pcrC && pcrC.length ? [{
+        name: 'COMEX 期权 PCR', type: 'line', xAxisIndex: 5, yAxisIndex: 7,
+        data: pcrC, showSymbol: false,
+        lineStyle: { width: 1.3, color: '#27ae60' },
+        itemStyle: { color: '#27ae60' },
+      }] : []),
+      // ±1σ 标准差轨道 (单独显示某条沪金 PCR 时有数据, 否则空; 不参与图例)
+      { id: 'pcrBandUp', name: '±1σ 标准差上轨', type: 'line',
+        xAxisIndex: 5, yAxisIndex: 7,
+        data: band ? band.up : [], showSymbol: false, silent: true, z: 1,
+        lineStyle: { width: 1, color: '#95a5a6', type: 'dashed' },
+        itemStyle: { color: '#95a5a6' }, tooltip: { show: false } },
+      { id: 'pcrBandDown', name: '±1σ 标准差下轨', type: 'line',
+        xAxisIndex: 5, yAxisIndex: 7,
+        data: band ? band.lo : [], showSymbol: false, silent: true, z: 1,
+        lineStyle: { width: 1, color: '#95a5a6', type: 'dashed' },
+        itemStyle: { color: '#95a5a6' }, tooltip: { show: false } },
     ],
   };
   chart.setOption(option, true);
+  // 用 action 恢复用户此前的图例开关状态:
+  // 不在 option 里塞 legend.selected —— 那样会让 echarts 内部开关状态机错乱,
+  // 导致重绘后下一次点击图例无法翻转。
+  const legendNames = new Set(option.legend.flatMap(l => l.data));
+  for (const [n, on] of Object.entries(legendSel)) {
+    if (legendNames.has(n)) {
+      chart.dispatchAction(
+        { type: on ? 'legendSelect' : 'legendUnSelect', name: n });
+    }
+  }
 }
 
 document.querySelectorAll('[data-dim]').forEach(btn => {
@@ -383,6 +493,20 @@ document.querySelectorAll('[data-range]').forEach(btn => {
 });
 
 // 尺寸变化时重绘: 桌面/手机布局(图例显隐)随宽度切换
+// 图例切换: 记住状态; 沪金 PCR 单独显示一条时给轨道序列灌数据, 两条都显示时清空。
+// 只更新序列数据, 不整体重绘 —— 整体 notMerge 重建会打乱 echarts legend 的开关状态机。
+chart.on('legendselectchanged', e => {
+  legendSel = e.selected;
+  const vol = e.selected['沪金期权成交量 PCR'] !== false;
+  const oi  = e.selected['沪金期权持仓量 PCR'] !== false;
+  pcrBandOn = vol !== oi;
+  const src = pcrBandOn ? (vol ? lastPcrVol : lastPcrOi) : null;
+  const band = src && src.length ? pcrStdBands(src) : null;
+  chart.setOption({ series: [
+    { id: 'pcrBandUp',   data: band ? band.up : [] },
+    { id: 'pcrBandDown', data: band ? band.lo : [] },
+  ] });
+});
 window.addEventListener('resize', () => { chart.resize(); render(); });
 // 字体加载完成后尺寸可能再变, load 时再校正一次
 window.addEventListener('load', () => { chart.resize(); render(); });
