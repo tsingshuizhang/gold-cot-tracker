@@ -50,29 +50,27 @@ jobs:
                       print("XSRF cookie: yes")
                   # 页面内直接 fetch API (同源, 浏览器自动带 cookie)
                   result = page.evaluate("""(async () => {
-                    const out = {meta: [], globals: []};
-                    const m = document.querySelector('meta[name="csrf-token"]');
-                    if (m) out.meta.push(m.content.slice(0, 12));
-                    for (const k of Object.keys(window)) {
-                      if (/token|csrf|xsrf/i.test(k)) out.globals.push(k);
-                    }
-                    const r = await fetch('/proxies/core-api/v1/historical/get'
-                      + '?symbol=GCU26&fields=symbol,timestamp,putCallRatio'
-                      + '&startDate=2026-08-01&endDate=2026-09-21'
-                      + '&orderBy=timestamp&orderDir=asc',
-                      {headers: {'Accept': 'application/json'}});
-                    out.status = r.status;
-                    const text = await r.text();
-                    out.head = text.slice(0, 200);
-                    try {
-                      const j = JSON.parse(text);
+                    const out = {};
+                    async function probe(label, qs) {
+                      const r = await fetch('/proxies/core-api/v1/historical/get?' + qs,
+                        {headers: {'Accept': 'application/json'}});
+                      const j = await r.json();
                       const rows = j.data || j.results || [];
-                      out.rows = rows.length;
-                      if (rows.length) { out.first = rows[0]; out.last = rows[rows.length-1]; }
-                    } catch (e) { out.parseErr = String(e); }
+                      out[label] = {
+                        status: r.status, count: j.count, rows: rows.length,
+                        keys: rows.length ? Object.keys(rows[0]) : [],
+                        first: rows[0], last: rows[rows.length - 1],
+                      };
+                    }
+                    await probe('noFields',
+                      'symbol=GCU26&startDate=2026-08-01&endDate=2026-09-21'
+                      + '&orderBy=timestamp&orderDir=asc');
+                    await probe('pcrOnly',
+                      'symbol=GCU26&fields=timestamp,putCallRatio&startDate=2026-08-01'
+                      + '&endDate=2026-09-21&orderBy=timestamp&orderDir=asc');
                     return out;
                   })()""")
-                  print("page fetch result:", json.dumps(result, ensure_ascii=False)[:600])
+                  print("probe:", json.dumps(result, ensure_ascii=False)[:900])
                   browser.close()
           except Exception:
               traceback.print_exc()
