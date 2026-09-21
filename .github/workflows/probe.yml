@@ -45,28 +45,26 @@ jobs:
                   idx = text.find("Gold")
                   print("overview gold ctx:", text[max(0,idx-100):idx+200].replace("\n", " | ")
                         if idx >= 0 else "NOT FOUND, len=" + str(len(text)))
-                  # B) 单合约页: 捕获 lambda-url 数据接口的请求与响应
+                  # B) 单合约页: 滚动触发懒加载, 嗅探所有含 putCall 的 XHR 响应
                   page2 = ctx.new_page()
-                  lambda_reqs = []
-                  lambda_resp = []
-                  def _log3(req):
-                      if "lambda-url" in req.url:
-                          lambda_reqs.append({"method": req.method,
-                                              "url": req.url,
-                                              "post": req.post_data})
-                  def _resp3(res):
-                      if "lambda-url" in res.url:
-                          try:
-                              lambda_resp.append(res.body().decode("utf-8", "ignore")[:500])
-                          except Exception as e:
-                              lambda_resp.append("BODY FAIL " + str(e)[:80])
-                  page2.on("request", _log3)
-                  page2.on("response", _resp3)
+                  hits = []
+                  def _resp4(res):
+                      try:
+                          if res.request.resource_type not in ("xhr", "fetch"):
+                              return
+                          body = res.body().decode("utf-8", "ignore")
+                          if "putCall" in body or "putcall" in body.lower():
+                              hits.append({"url": res.url[:150],
+                                           "head": body[:300]})
+                      except Exception:
+                          pass
+                  page2.on("response", _resp4)
                   page2.goto("https://www.barchart.com/futures/quotes/GCU26/options/put-call-ratios",
                              timeout=60000, wait_until="domcontentloaded")
-                  page2.wait_for_timeout(10000)
-                  print("lambda reqs:", json.dumps(lambda_reqs, ensure_ascii=False)[:600])
-                  print("lambda resp:", json.dumps(lambda_resp, ensure_ascii=False)[:600])
+                  for _ in range(4):
+                      page2.mouse.wheel(0, 2500)
+                      page2.wait_for_timeout(4000)
+                  print("putCall hits:", json.dumps(hits, ensure_ascii=False)[:900])
                   cookies = {c["name"]: c["value"] for c in ctx.cookies()}
                   print("cookies:", sorted(cookies.keys()))
                   title = page.title()
