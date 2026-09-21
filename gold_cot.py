@@ -841,8 +841,9 @@ def _fetch_comex_pcr_barchart(weeks: int):
                            "Chrome/120.0 Safari/537.36"),
             ("Accept", "application/json, text/plain, */*"),
         ]
-        # 取最近交割月合约符号, 如 GCV26 (2026年10月)
-        sym = "GC" + today.strftime("%y%m")
+        # 取最近交割月合约符号, Barchart 格式: GC + 月份代码 + 两位年份
+        # (月份代码 F G H J K M N Q U V X Z = 1~12 月), 如 GCV26 (2026年10月)
+        sym = "GC" + "FGHJKMNQUVXZ"[today.month - 1] + today.strftime("%y")
         page = opener.open(
             f"https://www.barchart.com/futures/quotes/{sym}/"
             "options/put-call-ratios", timeout=20)
