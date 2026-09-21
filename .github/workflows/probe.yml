@@ -37,9 +37,13 @@ jobs:
                                  "Chrome/131.0.0.0 Safari/537.36",
                       viewport={"width": 1366, "height": 900})
                   page = ctx.new_page()
+                  api_calls = []
+                  page.on("request", lambda req: api_calls.append(req.url)
+                          if "core-api" in req.url or "proxies" in req.url else None)
                   page.goto("https://www.barchart.com/futures/quotes/GCU26/options/put-call-ratios",
                             timeout=60000, wait_until="domcontentloaded")
                   page.wait_for_timeout(12000)  # 等 Cloudflare JS 挑战完成
+                  print("api calls:", json.dumps(api_calls[:8], ensure_ascii=False))
                   cookies = {c["name"]: c["value"] for c in ctx.cookies()}
                   print("cookies:", sorted(cookies.keys()))
                   title = page.title()
