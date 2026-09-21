@@ -37,13 +37,31 @@ jobs:
                                  "Chrome/131.0.0.0 Safari/537.36",
                       viewport={"width": 1366, "height": 900})
                   page = ctx.new_page()
-                  api_calls = []
-                  page.on("request", lambda req: api_calls.append(req.url)
-                          if "core-api" in req.url or "proxies" in req.url else None)
-                  page.goto("https://www.barchart.com/futures/quotes/GCU26/options/put-call-ratios",
+                  # A) 汇总页 /options/put-call-ratios 的表格是否服务端渲染
+                  page.goto("https://www.barchart.com/options/put-call-ratios",
                             timeout=60000, wait_until="domcontentloaded")
-                  page.wait_for_timeout(12000)  # 等 Cloudflare JS 挑战完成
-                  print("api calls:", json.dumps(api_calls[:8], ensure_ascii=False))
+                  page.wait_for_timeout(8000)
+                  text = page.inner_text("body")
+                  idx = text.find("Gold")
+                  print("overview gold ctx:", text[max(0,idx-100):idx+200].replace("\n", " | ")
+                        if idx >= 0 else "NOT FOUND, len=" + str(len(text)))
+                  # B) 单合约页: 全部网络请求按 host 统计
+                  api_hosts = {}
+                  page2 = ctx.new_page()
+                  def _log(req):
+                      h = req.url.split("/")[2] if "://" in req.url else "?"
+                      api_hosts[h] = api_hosts.get(h, 0) + 1
+                  page2.on("request", _log)
+                  page2.goto("https://www.barchart.com/futures/quotes/GCU26/options/put-call-ratios",
+                             timeout=60000, wait_until="domcontentloaded")
+                  page2.wait_for_timeout(10000)
+                  page2.mouse.wheel(0, 3000)
+                  page2.wait_for_timeout(5000)
+                  print("hosts:", json.dumps(api_hosts, ensure_ascii=False)[:400])
+                  text2 = page2.inner_text("body")
+                  i2 = text2.find("Put/Call")
+                  print("p/c ctx:", text2[max(0,i2-50):i2+300].replace("\n", " | ")
+                        if i2 >= 0 else "no p/c text")
                   cookies = {c["name"]: c["value"] for c in ctx.cookies()}
                   print("cookies:", sorted(cookies.keys()))
                   title = page.title()
