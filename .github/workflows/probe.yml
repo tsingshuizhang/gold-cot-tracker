@@ -1,0 +1,74 @@
+name: probe-sources
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 测试 Barchart / Yahoo 连通性
+        run: |
+          echo "=== barchart.com ==="
+          curl -s -o /dev/null -w "%{http_code}\n" --max-time 20 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0" \
+            "https://www.barchart.com/" || echo "CONNECT FAIL"
+          echo "=== yahoo query1 ==="
+          curl -s -o /dev/null -w "%{http_code}\n" --max-time 20 \
+            -H "User-Agent: Mozilla/5.0" \
+            "https://query1.finance.yahoo.com/v8/finance/chart/GC=F" || echo "CONNECT FAIL"
+      - name: 安装 yfinance 并测试期权链
+        run: |
+          pip -q install yfinance
+          python - <<'EOF'
+          import traceback
+          try:
+              import yfinance as yf
+              print("yfinance", yf.__version__)
+              t = yf.Ticker("GC=F")
+              exps = list(t.options)
+              print("expiries:", exps[:3])
+              if exps:
+                  ch = t.option_chain(exps[0])
+                  cv = ch.calls["volume"].fillna(0).sum()
+                  pv = ch.puts["volume"].fillna(0).sum()
+                  print(f"PCR sample: {pv/cv:.3f} (put {pv} / call {cv})")
+          except Exception:
+              traceback.print_exc()
+          EOF
+      - name: 测试 Barchart put-call-ratios 页面 + API
+        run: |
+          python - <<'EOF'
+          import http.cookiejar, json, traceback, urllib.request
+          try:
+              cj = http.cookiejar.CookieJar()
+              op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+              op.addheaders = [("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0")]
+              from datetime import datetime
+              MCODE = "FGHJKMNQUVXZ"
+              today = datetime.now()
+              sym = "GC" + MCODE[today.month - 1] + today.strftime("%y")
+              print("sym:", sym)
+              page = op.open(f"https://www.barchart.com/futures/quotes/{sym}/options/put-call-ratios", timeout=20)
+              print("page status:", page.status)
+              page.read()
+              xsrf = next((c.value for c in cj if c.name == "XSRF-TOKEN"), None)
+              print("xsrf:", bool(xsrf))
+              if xsrf:
+                  import urllib.parse
+                  url = ("https://www.barchart.com/proxies/core-api/v1/historical/get"
+                         f"?symbol={sym}&fields=symbol,timestamp,putCallRatio"
+                         f"&startDate=2026-08-01&endDate={today:%Y-%m-%d}"
+                         "&orderBy=timestamp&orderDir=asc")
+                  req = urllib.request.Request(url, headers={"X-XSRF-TOKEN": urllib.parse.unquote(xsrf)})
+                  payload = json.loads(op.open(req, timeout=20).read())
+                  rows = payload.get("data") or payload.get("results") or []
+                  print("api rows:", len(rows))
+                  if rows:
+                      print("sample:", rows[0], rows[-1])
+          except Exception:
+              traceback.print_exc()
+          EOF
