@@ -20,62 +20,48 @@ jobs:
           curl -s -o /dev/null -w "%{http_code}\n" --max-time 20 \
             -H "User-Agent: Mozilla/5.0" \
             "https://query1.finance.yahoo.com/v8/finance/chart/GC=F" || echo "CONNECT FAIL"
-      - name: 测试 curl_cffi 模拟 Chrome TLS 访问 CME/Barchart/Yahoo
+      - name: 测试 Playwright 真实浏览器访问 Barchart (过 Cloudflare)
         run: |
-          pip -q install curl_cffi
+          pip -q install playwright
+          python -m playwright install chromium --with-deps 2>&1 | tail -1
           python - <<'EOF'
-          import json, traceback
-          from curl_cffi import requests as cr
-          S = cr.Session(impersonate="chrome")
-
-          # 1) Yahoo 期权链原始响应结构
+          import traceback
+          from playwright.sync_api import sync_playwright
           try:
-              r = S.get("https://fc.yahoo.com", timeout=15, allow_redirects=True)
-              r = S.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=15)
-              crumb = r.text.strip()
-              print("crumb:", r.status_code, crumb[:10])
-              r = S.get("https://query1.finance.yahoo.com/v7/finance/options/GC=F",
-                        params={"crumb": crumb}, timeout=20)
-              j = r.json()
-              oc = j.get("optionChain", {})
-              print("options status:", r.status_code, "error:", oc.get("error"))
-              res = oc.get("result") or []
-              if res:
-                  print("result keys:", sorted(res[0].keys()))
-                  exps = res[0].get("expirationDates") or []
-                  print("expiries:", len(exps), exps[:3])
-                  if exps:
-                      pv = cv = 0.0
-                      for ts in exps[:2]:
-                          r2 = S.get("https://query1.finance.yahoo.com/v7/finance/options/GC=F",
-                                     params={"crumb": crumb, "expiration": ts}, timeout=20)
-                          opts = r2.json()["optionChain"]["result"][0]["options"][0]
-                          for o in opts.get("calls", []): cv += o.get("volume") or 0
-                          for o in opts.get("puts", []): pv += o.get("volume") or 0
-                      if cv: print(f"Yahoo VOL PCR={pv/cv:.3f} (put {pv}/call {cv})")
-              else:
-                  print("RAW head:", r.text[:300])
-          except Exception as e:
-              print("Yahoo FAIL:", type(e).__name__, str(e)[:150])
-
-          # 2) CME 找黄金 productId (ProductSlate 搜索)
-          try:
-              for q in ["GOLD", "GC"]:
-                  r = S.get(f"https://www.cmegroup.com/CmeWS/mvc/ProductSlate/V2/List/500/1?sortField=oi&sortAsc=false&cleared=FUT&exch=NYMEX&foi=FUT&commodity={q}",
-                            timeout=20)
-                  print("slate", q, r.status_code, r.text[:200].replace("\n", " "))
-          except Exception as e:
-              print("slate FAIL:", type(e).__name__, str(e)[:120])
-          # 常见 productId 逐个试期货 settlements
-          try:
-              for pid in [470, 437, 1, 8008]:
-                  r = S.get(f"https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settle/{pid}",
-                            params={"tradeDate": "09/18/2026", "pageSize": 3, "isProtected": ""},
-                            timeout=15)
-                  head = r.text[:120].replace("\n", " ")
-                  print(f"futures pid={pid}:", r.status_code, head)
-          except Exception as e:
-              print("futures probe FAIL:", type(e).__name__, str(e)[:120])
+              with sync_playwright() as p:
+                  browser = p.chromium.launch(headless=True, args=[
+                      "--disable-blink-features=AutomationControlled"])
+                  ctx = browser.new_context(
+                      user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                 "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                 "Chrome/131.0.0.0 Safari/537.36",
+                      viewport={"width": 1366, "height": 900})
+                  page = ctx.new_page()
+                  page.goto("https://www.barchart.com/futures/quotes/GCU26/options/put-call-ratios",
+                            timeout=60000, wait_until="domcontentloaded")
+                  page.wait_for_timeout(12000)  # 等 Cloudflare JS 挑战完成
+                  cookies = {c["name"]: c["value"] for c in ctx.cookies()}
+                  print("cookies:", sorted(cookies.keys()))
+                  title = page.title()
+                  print("title:", title[:80])
+                  body = page.inner_text("body")[:200].replace("\n", " | ")
+                  print("body head:", body)
+                  if "XSRF-TOKEN" in cookies:
+                      r = ctx.request.get(
+                          "https://www.barchart.com/proxies/core-api/v1/historical/get"
+                          "?symbol=GCU26&fields=symbol,timestamp,putCallRatio"
+                          "&startDate=2026-08-01&endDate=2026-09-21"
+                          "&orderBy=timestamp&orderDir=asc",
+                          headers={"X-XSRF-TOKEN": cookies["XSRF-TOKEN"]})
+                      print("api status:", r.status)
+                      j = r.json()
+                      rows = j.get("data") or j.get("results") or []
+                      print("api rows:", len(rows))
+                      if rows:
+                          print("sample:", rows[0], rows[-1])
+                  browser.close()
+          except Exception:
+              traceback.print_exc()
           EOF
       - name: 测试 Barchart put-call-ratios 页面 + API
         run: |
