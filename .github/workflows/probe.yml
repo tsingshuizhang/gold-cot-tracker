@@ -20,37 +20,67 @@ jobs:
           curl -s -o /dev/null -w "%{http_code}\n" --max-time 20 \
             -H "User-Agent: Mozilla/5.0" \
             "https://query1.finance.yahoo.com/v8/finance/chart/GC=F" || echo "CONNECT FAIL"
-      - name: 测试 CME 官方 settlements API (期权含成交量/持仓量)
+      - name: 测试 curl_cffi 模拟 Chrome TLS 访问 CME/Barchart/Yahoo
         run: |
+          pip -q install curl_cffi
           python - <<'EOF'
-          import json, traceback, urllib.request, time
-          UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0"}
-          def get(url):
-              req = urllib.request.Request(url, headers=UA)
-              return urllib.request.urlopen(req, timeout=20).read()
-          # 1) 黄金期货 productId 确认 (futures settlements)
+          import json, traceback
+          from curl_cffi import requests as cr
+          S = cr.Session(impersonate="chrome")
+
+          # 1) CME 期权 settlements
           try:
-              d = json.loads(get("https://www.cmegroup.com/CmeWS/mvc/Settlements/Futures/Settle/470?tradeDate=09/18/2026&pageSize=5&isProtected"))
-              rows = d.get("settlements", [])
-              print("futures rows:", len(rows), rows[0].get("productId") if rows else None,
-                    rows[0].get("productDesc") if rows else None)
+              r = S.get("https://www.cmegroup.com/CmeWS/mvc/Settlements/Options/Settle/470/V/2026",
+                        params={"tradeDate": "09/18/2026", "pageSize": 500, "isProtected": ""},
+                        timeout=20)
+              print("CME status:", r.status_code)
+              if r.status_code == 200:
+                  rows = r.json().get("settlements", [])
+                  print("CME options rows:", len(rows))
+                  if rows:
+                      print("keys:", sorted(rows[0].keys())[:15])
+                      cv = sum(float(x.get("volume") or 0) for x in rows if x.get("type") == "Call")
+                      pv = sum(float(x.get("volume") or 0) for x in rows if x.get("type") == "Put")
+                      co = sum(float(x.get("openInterest") or 0) for x in rows if x.get("type") == "Call")
+                      po = sum(float(x.get("openInterest") or 0) for x in rows if x.get("type") == "Put")
+                      print(f"CME VOL PCR={pv/cv:.3f} OI PCR={po/co:.3f}")
           except Exception as e:
-              print("futures FAIL:", type(e).__name__, str(e)[:100])
-          # 2) 期权 settlements (最近月份 V=10月)
+              print("CME FAIL:", type(e).__name__, str(e)[:120])
+
+          # 2) Yahoo crumb + 期权链
           try:
-              d = json.loads(get("https://www.cmegroup.com/CmeWS/mvc/Settlements/Options/Settle/470/V/2026?tradeDate=09/18/2026&pageSize=500&isProtected"))
-              rows = d.get("settlements", [])
-              print("options rows:", len(rows))
-              if rows:
-                  print("keys:", sorted(rows[0].keys()))
-                  print("sample:", {k: rows[0][k] for k in list(rows[0])[:12]})
-                  cv = sum(float(r.get("volume") or 0) for r in rows if r.get("type") == "Call")
-                  pv = sum(float(r.get("volume") or 0) for r in rows if r.get("type") == "Put")
-                  co = sum(float(r.get("openInterest") or 0) for r in rows if r.get("type") == "Call")
-                  po = sum(float(r.get("openInterest") or 0) for r in rows if r.get("type") == "Put")
-                  print(f"VOL PCR={pv/cv:.3f} (put {pv:.0f}/call {cv:.0f}) | OI PCR={po/co:.3f} (put {po:.0f}/call {co:.0f})")
+              r = S.get("https://fc.yahoo.com", timeout=15, allow_redirects=True)
+              print("yahoo cookie status:", r.status_code)
+              r = S.get("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=15)
+              print("crumb status:", r.status_code)
+              crumb = r.text.strip()
+              if r.status_code == 200 and crumb:
+                  r = S.get("https://query1.finance.yahoo.com/v7/finance/options/GC=F",
+                            params={"crumb": crumb}, timeout=20)
+                  print("options status:", r.status_code)
+                  if r.status_code == 200:
+                      res = r.json()["optionChain"]["result"]
+                      exps = res[0]["expirationDates"] if res else []
+                      print("expiries:", len(exps))
+                      pv = cv = 0.0
+                      for ts in exps[:2]:
+                          r2 = S.get("https://query1.finance.yahoo.com/v7/finance/options/GC=F",
+                                     params={"crumb": crumb, "expiration": ts}, timeout=20)
+                          opts = r2.json()["optionChain"]["result"][0]["options"][0]
+                          for o in opts.get("calls", []): cv += o.get("volume") or 0
+                          for o in opts.get("puts", []): pv += o.get("volume") or 0
+                      if cv: print(f"Yahoo VOL PCR={pv/cv:.3f} (put {pv}/call {cv})")
           except Exception as e:
-              print("options FAIL:", type(e).__name__, str(e)[:100])
+              print("Yahoo FAIL:", type(e).__name__, str(e)[:120])
+
+          # 3) Barchart put-call-ratios
+          try:
+              r = S.get("https://www.barchart.com/futures/quotes/GCU26/options/put-call-ratios", timeout=20)
+              print("barchart page status:", r.status_code, "len:", len(r.text))
+              xsrf = S.cookies.get("XSRF-TOKEN")
+              print("barchart xsrf:", bool(xsrf))
+          except Exception as e:
+              print("Barchart FAIL:", type(e).__name__, str(e)[:120])
           EOF
       - name: 测试 Barchart put-call-ratios 页面 + API
         run: |
