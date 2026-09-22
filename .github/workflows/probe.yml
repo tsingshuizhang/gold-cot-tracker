@@ -1,0 +1,73 @@
+name: probe-sources
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Barchart GLD put-call-ratios 页历史数据嗅探
+        run: |
+          pip -q install playwright
+          python -m playwright install chromium --with-deps 2>&1 | tail -1
+          python - <<'EOF'
+          import json, re, traceback
+          from playwright.sync_api import sync_playwright
+          try:
+              with sync_playwright() as p:
+                  browser = p.chromium.launch(headless=True, args=[
+                      "--disable-blink-features=AutomationControlled"])
+                  ctx = browser.new_context(
+                      user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                 "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                 "Chrome/131.0.0.0 Safari/537.36",
+                      viewport={"width": 1366, "height": 900})
+                  page = ctx.new_page()
+                  bodies = []
+                  def _resp(res):
+                      try:
+                          if res.request.resource_type in ("xhr", "fetch"):
+                              t = res.body().decode("utf-8", "ignore")
+                              if "utall" in t.lower() or "pcr" in t.lower()[:200000]:
+                                  bodies.append({"url": res.url[:130], "head": t[:250]})
+                      except Exception:
+                          pass
+                  page.on("response", _resp)
+                  page.goto("https://www.barchart.com/stocks/quotes/GLD/options/put-call-ratios",
+                            timeout=60000, wait_until="domcontentloaded")
+                  page.wait_for_timeout(9000)
+                  # 页面 HTML 内嵌数据?
+                  html = page.content()
+                  m = [x for x in re.findall(r".{60}putCall.{120}", html)]
+                  print("embedded putCall snippets:", json.dumps(m[:3], ensure_ascii=False)[:500])
+                  # 滚动 + 点击图表区域触发懒加载
+                  for _ in range(3):
+                      page.mouse.wheel(0, 2000)
+                      page.wait_for_timeout(3000)
+                  print("title:", page.title()[:60])
+                  print("xhr bodies:", json.dumps(bodies[:6], ensure_ascii=False)[:800])
+                  # 常见候选接口探测
+                  r = page.evaluate("""(async () => {
+                    const out = [];
+                    const tries = [
+                      '/proxies/core-api/v1/options/put-call-ratios?symbol=GLD',
+                      '/proxies/options-api/v1/put-call-ratios?symbol=GLD',
+                      '/proxies/core-api/v1/options/getPutCallRatios?symbol=GLD',
+                    ];
+                    for (const u of tries) {
+                      try {
+                        const r = await fetch(u, {headers: {'Accept': 'application/json'}});
+                        out.push({u: u.slice(0, 60), s: r.status, head: (await r.text()).slice(0, 120)});
+                      } catch (e) { out.push({u: u.slice(0, 60), err: String(e).slice(0, 60)}); }
+                    }
+                    return out;
+                  })()""")
+                  print("candidates:", json.dumps(r, ensure_ascii=False)[:700])
+                  browser.close()
+          except Exception:
+              traceback.print_exc()
+          EOF
