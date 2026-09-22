@@ -131,7 +131,7 @@
     (成交量与持仓量两个口径); 美国 GLD 期权 PCR 来自 Yahoo 期权链快照
     (GLD 为 CBOE 上市流动性最好的美国黄金相关期权, 网络受限时该线自动隐藏)。
     PCR &gt; 1 表示看跌成交/持仓多于看涨, 市场情绪偏空; 反之偏多。<br>
-    点击图例<b>单独显示</b>成交量或持仓量 PCR 时, 会自动叠加 ±1σ 标准差上下轨
+    点击图例<b>单独显示</b>任意一条 PCR (沪金成交量/持仓量或美国 GLD) 时, 会自动叠加 ±1σ 标准差上下轨
     (灰色虚线, 滚动 60 日窗口); 美国 GLD 期权 PCR 来自 Yahoo, 不可用时自动隐藏。<br>
     K线/布林带/斐波那契/均线/MACD 等技术分析已移至
     <a href="dashboard_ta.html">技术分析页</a>, 两页数据互相独立。
@@ -156,12 +156,20 @@ let dim = 'week';
 let range = 'all';
 // 图例选择状态 (跨重绘保持, 供 PCR 标准差轨道显隐判断)
 let legendSel = {};
-// PCR 标准差轨道: 图例单独显示 成交量PCR 或 持仓量PCR 时叠加 ±1σ 轨道
+// PCR 标准差轨道: 三条 PCR 线(沪金成交量/沪金持仓量/美国GLD)恰好单独显示一条时叠加 ±1σ 轨道
 const PCR_BAND_WIN = 60;   // 滚动窗口 (≈3 个月交易日)
 const PCR_BAND_MIN = 20;   // 窗口内最少样本数, 不足不出轨
 let pcrBandOn = false;     // 当前轨道是否有数据 (供重绘时恢复)
 let lastPcrVol = [];       // 最近一次的 PCR 序列 (图例事件里算轨道用)
 let lastPcrOi = [];
+let lastPcrC = [];
+
+// 三条 PCR 线中恰好单独显示一条时, 返回该条的序列; 否则返回 null
+function lonePcrSeries(vol, oi, gld) {
+  const on = [[vol, lastPcrVol], [oi, lastPcrOi], [gld, lastPcrC]]
+    .filter(x => x[0]);
+  return on.length === 1 && on[0][1].length ? on[0][1] : null;
+}
 
 // 滚动均值 ± 1σ 上下轨; pair 为 [[日期, 值], ...] (按日期升序)
 function pcrStdBands(pair) {
@@ -279,16 +287,19 @@ function render() {
   const pcrVol = pcrS ? pcrS.map(r => [r[0], r[1]]) : null;
   const pcrOi  = pcrS ? pcrS.map(r => [r[0], r[2]]) : null;
 
-  // 标准差轨道: 两条沪金 PCR 中恰好单独显示一条时, 给它叠加 ±1σ 轨道
+  // 标准差轨道: 三条 PCR 线中恰好单独显示一条时, 给它叠加 ±1σ 轨道
   // 轨道序列始终存在(默认空数据), 图例切换时只更新数据, 不整体重绘
   const volOn = legendSel['沪金期权成交量 PCR'] !== false;
   const oiOn  = legendSel['沪金期权持仓量 PCR'] !== false;
-  const bandSrc = (pcrVol && volOn && !oiOn) ? pcrVol
-                : (pcrOi && oiOn && !volOn) ? pcrOi : null;
-  const band = bandSrc ? pcrStdBands(bandSrc) : null;
-  pcrBandOn = !!band;
+  const gldOn = legendSel['美国 GLD 期权 PCR'] !== false;
   lastPcrVol = pcrVol || [];
   lastPcrOi = pcrOi || [];
+  lastPcrC = (pcrC && pcrC.length) ? pcrC : [];
+  const bandSrc = lonePcrSeries(!!pcrVol && volOn, !!pcrOi && oiOn,
+                                !!lastPcrC.length && gldOn)
+    || null;
+  const band = bandSrc ? pcrStdBands(bandSrc) : null;
+  pcrBandOn = !!band;
 
   // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
@@ -449,7 +460,7 @@ function render() {
         lineStyle: { width: 1.3, color: '#27ae60' },
         itemStyle: { color: '#27ae60' },
       }] : []),
-      // ±1σ 标准差轨道 (单独显示某条沪金 PCR 时有数据, 否则空; 不参与图例)
+      // ±1σ 标准差轨道 (单独显示某条 PCR 时有数据, 否则空; 不参与图例)
       { id: 'pcrBandUp', name: '±1σ 标准差上轨', type: 'line',
         xAxisIndex: 5, yAxisIndex: 7,
         data: band ? band.up : [], showSymbol: false, silent: true, z: 1,
@@ -493,15 +504,16 @@ document.querySelectorAll('[data-range]').forEach(btn => {
 });
 
 // 尺寸变化时重绘: 桌面/手机布局(图例显隐)随宽度切换
-// 图例切换: 记住状态; 沪金 PCR 单独显示一条时给轨道序列灌数据, 两条都显示时清空。
+// 图例切换: 记住状态; PCR 恰好单独显示一条时给轨道序列灌数据, 否则清空。
 // 只更新序列数据, 不整体重绘 —— 整体 notMerge 重建会打乱 echarts legend 的开关状态机。
 chart.on('legendselectchanged', e => {
   legendSel = e.selected;
-  const vol = e.selected['沪金期权成交量 PCR'] !== false;
-  const oi  = e.selected['沪金期权持仓量 PCR'] !== false;
-  pcrBandOn = vol !== oi;
-  const src = pcrBandOn ? (vol ? lastPcrVol : lastPcrOi) : null;
-  const band = src && src.length ? pcrStdBands(src) : null;
+  const vol = e.selected['沪金期权成交量 PCR'] !== false && lastPcrVol.length > 0;
+  const oi  = e.selected['沪金期权持仓量 PCR'] !== false && lastPcrOi.length > 0;
+  const gld = e.selected['美国 GLD 期权 PCR'] !== false && lastPcrC.length > 0;
+  const src = lonePcrSeries(vol, oi, gld);
+  pcrBandOn = !!src;
+  const band = src ? pcrStdBands(src) : null;
   chart.setOption({ series: [
     { id: 'pcrBandUp',   data: band ? band.up : [] },
     { id: 'pcrBandDown', data: band ? band.lo : [] },
