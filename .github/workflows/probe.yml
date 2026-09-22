@@ -50,24 +50,29 @@ jobs:
                       page.wait_for_timeout(3000)
                   print("title:", page.title()[:60])
                   print("xhr bodies:", json.dumps(bodies[:6], ensure_ascii=False)[:800])
-                  # 从 JS bundle 里找 put-call-ratios 的真实 API 路径与参数
-                  r = page.evaluate("""(async () => {
-                    const srcs = [...document.scripts].map(s => s.src).filter(Boolean);
-                    const pats = [];
-                    for (const u of srcs.slice(0, 40)) {
-                      try {
-                        const t = await (await fetch(u)).text();
-                        for (const m of t.matchAll(/["'`]([^"'`]{0,90}put[-_]?call[^"'`]{0,90})["'`]/gi)) {
-                          pats.push(m[1]);
+                  # 页面截图 + 图表元素检查 + 付费墙检测
+                  text_all = page.inner_text("body")
+                  for kw in ["Premium", "premium", "Log In", "Subscribe", "upgrade"]:
+                      if kw in text_all:
+                          print("paywall kw:", kw)
+                  n_canvas = page.evaluate("document.querySelectorAll('#chartContainer canvas, .chart canvas, canvas').length")
+                  print("canvas count:", n_canvas)
+                  page.screenshot(path="probe_page.png", full_page=False)
+                  # Highcharts 数据提取尝试
+                  hc = page.evaluate("""(() => {
+                    const out = [];
+                    if (window.Highcharts && Highcharts.charts) {
+                      for (const c of Highcharts.charts) {
+                        if (!c) continue;
+                        for (const s of c.series || []) {
+                          const pts = (s.data || []).slice(0, 3).map(p => [p.x, p.y]);
+                          out.push({name: s.name, n: (s.data||[]).length, pts});
                         }
-                        for (const m of t.matchAll(/["'`](\\/proxies\\/[^"'`]{5,90})["'`]/g)) {
-                          if (/option|put|call|pcr/i.test(m[1])) pats.push(m[1]);
-                        }
-                      } catch (e) {}
+                      }
                     }
-                    return [...new Set(pats)].slice(0, 30);
+                    return out;
                   })()""")
-                  print("js api patterns:", json.dumps(r, ensure_ascii=False)[:900])
+                  print("highcharts:", json.dumps(hc, ensure_ascii=False)[:500])
                   browser.close()
           except Exception:
               traceback.print_exc()
