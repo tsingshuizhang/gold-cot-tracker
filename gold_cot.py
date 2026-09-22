@@ -34,7 +34,9 @@ import urllib.parse
 import urllib.request
 import zipfile
 from datetime import datetime, timedelta
+from datetime import time as dtime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -91,6 +93,43 @@ LEGACY_ZIP_HEADER_MAP = {
     "nonreportable positions-long (all)": "nonrept_positions_long_all",
     "nonreportable positions-short (all)": "nonrept_positions_short_all",
 }
+
+
+# ---------------------------------------------------------------------------
+# 发布时点 (刷新只在数据已发布后进行, 避免无效请求)
+# ---------------------------------------------------------------------------
+
+ET = ZoneInfo("America/New_York")     # COMEX/CBOE/NYSE 所在时区
+
+
+def _latest_completed_us_trading_day() -> str:
+    """最近一个已收盘的美股交易日 (YYYY-MM-DD)。
+
+    美股 17:00 ET 收盘; 收盘前当天的日线/期权成交量都未发布,
+    此时点之前只能取上一交易日, 周末回退到周五。
+    """
+    now_et = datetime.now(ET)
+    d = now_et.date()
+    if (now_et.hour, now_et.minute) < (17, 5):
+        d -= timedelta(days=1)
+    while d.weekday() >= 5:           # 5=周六 6=周日
+        d -= timedelta(days=1)
+    return d.strftime("%Y-%m-%d")
+
+
+def _latest_cot_report_date() -> str:
+    """最近一期已发布的 COT 报告日期 (数据截至日, 周二)。
+
+    COT 每周五 15:30 ET 发布 (数据截至当周周二);
+    该时点之前, 最新一期仍是上一周的报告。
+    """
+    now_et = datetime.now(ET)
+    tue = now_et.date() - timedelta(days=(now_et.weekday() - 1) % 7)
+    publish = datetime.combine(tue + timedelta(days=3),
+                               dtime(15, 30), tzinfo=ET)
+    if now_et < publish:
+        tue -= timedelta(days=7)
+    return tue.strftime("%Y-%m-%d")
 
 
 # ---------------------------------------------------------------------------
@@ -597,10 +636,11 @@ def fetch_gold_ohlc(weeks: int):
 
     today = datetime.now().strftime("%Y-%m-%d")
     last = cached[-1][0] if cached else None
-    # 3 天新鲜度窗口: 覆盖周末休市, 缓存已接近最新时不再发请求
-    if last and (datetime.now() - datetime.strptime(last, "%Y-%m-%d")
-                 ).days <= 3:
-        print("  [缓存] 黄金 OHLC 已是最新, 无需重复抓取")
+    # 与发布时点对齐: 只认最近一个已收盘的美股交易日 (17:00 ET 收盘),
+    # 缓存已覆盖该日则不再发请求 (规则: 增量 + 发布时点后刷新)
+    last_us = _latest_completed_us_trading_day()
+    if last and last >= last_us:
+        print(f"  [缓存] 黄金 OHLC 已是最新 ({last_us} 已覆盖)")
         return cached
     if last:
         beg = datetime.strptime(last, "%Y-%m-%d") - timedelta(days=5)
@@ -609,7 +649,8 @@ def fetch_gold_ohlc(weeks: int):
         beg = datetime.strptime(cutoff, "%Y-%m-%d")
         print(f"  [全量] 黄金 OHLC 抓取 {cutoff} 以来的数据")
 
-    new_rows = _fetch_ohlc_range(beg, datetime.now()) or []
+    end = datetime.strptime(last_us, "%Y-%m-%d")
+    new_rows = _fetch_ohlc_range(beg, end) or []
     merged = {r[0]: r for r in cached}
     for r in new_rows:
         merged[r[0]] = r
@@ -707,13 +748,16 @@ def fetch_shfe_pcr_incremental(weeks: int):
     cached = [r for r in stored if r[0] >= cutoff]
 
     today = datetime.now()
-    # 补齐窗口 [cutoff, today] 内所有缺失日期 (只请求缺失日,
-    # 因此先用小窗口跑过, 再切换大窗口时也会回补中间历史)
+    # 补齐窗口 [cutoff, 昨天] 内所有缺失日期 (只请求缺失日,
+    # 因此先用小窗口跑过, 再切换大窗口时也会回补中间历史)。
+    # 不请求今天: 上期所日行情当日晚间才发布, 白天/清晨请求会把今天
+    # 误记为休市日(gaps)导致永久缺失。
     have = {r[0] for r in stored}
     no_data = set(gaps)
     days = []
     d = datetime.strptime(cutoff, "%Y-%m-%d")
-    while d <= today:
+    yesterday = today - timedelta(days=1)
+    while d <= yesterday:
         if d.strftime("%Y-%m-%d") not in have | no_data:
             days.append(d)
         d += timedelta(days=1)
@@ -767,8 +811,9 @@ def _fetch_us_pcr_gld(weeks: int) -> list[list] | None:
     Yahoo 不提供期货期权链。GLD 是 CBOE 上市、流动性最好的美国黄金相关
     期权, 作为美国端黄金期权情绪代理。
 
-    期权链只有当日快照、没有历史, 每次只补当天一条; 配合 CI 每日运行
-    逐日累积出时间序列。任何失败返回旧缓存或 None。
+    期权链只有当日快照、没有历史, 每次只补"最近已收盘美股交易日"一条
+    (以美股交易日打戳, 而非运行日); 配合 CI 每日运行逐日累积出时间序列。
+    任何失败返回旧缓存或 None。
     返回 [[日期, 成交量PCR], ...] (按日期升序)。
     """
     cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
@@ -782,9 +827,11 @@ def _fetch_us_pcr_gld(weeks: int) -> list[list] | None:
     cached = [r for r in cached
               if isinstance(r, list) and len(r) == 2 and r[0] >= cutoff]
 
-    today = datetime.now()
+    # 与发布时点对齐: GLD 期权成交量在美股收盘 (17:00 ET) 后才完整,
+    # 以"最近一个已收盘的美股交易日"为目标日, 缓存已有该日则不发请求
+    target = _latest_completed_us_trading_day()
     last = cached[-1][0] if cached else None
-    if last and (today - datetime.strptime(last, "%Y-%m-%d")).days <= 3:
+    if last and last >= target:
         return cached
 
     try:
@@ -812,8 +859,7 @@ def _fetch_us_pcr_gld(weeks: int) -> list[list] | None:
         if cv <= 0:
             return cached or None
         merged = {r0[0]: r0 for r0 in cached}
-        merged[today.strftime("%Y-%m-%d")] = [
-            today.strftime("%Y-%m-%d"), round(pv / cv, 3)]
+        merged[target] = [target, round(pv / cv, 3)]
         rows = sorted(merged.values(), key=lambda r0: r0[0])
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         US_PCR_CACHE.write_text(json.dumps(rows, ensure_ascii=False),
@@ -906,19 +952,71 @@ def make_chart(records: list[dict], weeks: int) -> None:
 # 命令
 # ---------------------------------------------------------------------------
 
+COT_CACHE = DATA_DIR / "gold_cot_cache.json"
+
+
+def _load_cot_cache() -> tuple[dict, dict]:
+    """读取 COT 磁盘缓存, 返回 {报告日期: 记录} 两个 dict。"""
+    if not COT_CACHE.exists():
+        return {}, {}
+    try:
+        blob = json.loads(COT_CACHE.read_text(encoding="utf-8"))
+        disagg = {r["report_date"]: r for r in blob.get("disagg") or []
+                  if isinstance(r, dict) and r.get("report_date")}
+        legacy = {r["report_date"]: r for r in blob.get("legacy") or []
+                  if isinstance(r, dict) and r.get("report_date")}
+        return disagg, legacy
+    except Exception:  # noqa: BLE001
+        return {}, {}
+
+
+def _save_cot_cache(disagg: list[dict], legacy: list[dict]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    COT_CACHE.write_text(json.dumps(
+        {"disagg": disagg, "legacy": legacy}, ensure_ascii=False),
+        encoding="utf-8")
+
+
 def load_history(weeks: int, with_legacy: bool = True
                  ) -> tuple[list[dict], list[dict]]:
-    """抓取并整理历史数据, 返回 (disaggregated, legacy)。"""
+    """抓取并整理历史数据, 返回 (disaggregated, legacy)。
+
+    带磁盘缓存 (data/gold_cot_cache.json): COT 每周五 15:30 ET 才发布,
+    缓存已覆盖最近一期已发布报告时直接跳过网络请求。
+    """
+    latest_expected = _latest_cot_report_date()
+    cached_disagg, cached_legacy = _load_cot_cache()
+    have_disagg = (max(cached_disagg) if cached_disagg else None)
+    have_legacy = (max(cached_legacy) if cached_legacy else None)
+    if (have_disagg and have_disagg >= latest_expected
+            and (not with_legacy
+                 or (have_legacy and have_legacy >= latest_expected))):
+        print(f"  [缓存] COT 已是最新 (最新报告 {have_disagg}, "
+              f"周五 15:30 ET 发布新报告后才需抓取)")
+        disagg = [cached_disagg[d] for d in sorted(cached_disagg)]
+        legacy = [cached_legacy[d] for d in sorted(cached_legacy)]
+        add_weekly_changes(disagg, ["open_interest", "mm_net", "pm_net",
+                                    "swap_net", "other_net"])
+        add_weekly_changes(legacy, ["open_interest", "noncomm_net",
+                                    "comm_net"])
+        return disagg, legacy
+
     print(f"正在从 CFTC 抓取黄金 COT 数据 (最近 {weeks} 周)...")
     disagg_raw = fetch_gold_cot(DATASET_DISAGGREGATED, weeks)
     legacy_raw = (fetch_gold_cot(DATASET_LEGACY, weeks)
                   if with_legacy else [])
     if not disagg_raw:
+        if cached_disagg:            # 网络失败时降级用旧缓存
+            print("  [提示] 抓取失败, 使用本地缓存的 COT 数据")
+            disagg = [cached_disagg[d] for d in sorted(cached_disagg)]
+            legacy = [cached_legacy[d] for d in sorted(cached_legacy)]
+            return disagg, legacy
         print("  [错误] 未获取到 Disaggregated 数据, 请检查网络")
         sys.exit(1)
 
     disagg = [normalize_disaggregated(r) for r in disagg_raw]
     legacy = [normalize_legacy(r) for r in legacy_raw]
+    _save_cot_cache(disagg, legacy)
     add_weekly_changes(disagg, ["open_interest", "mm_net", "pm_net",
                                 "swap_net", "other_net"])
     add_weekly_changes(legacy, ["open_interest", "noncomm_net", "comm_net"])
@@ -966,9 +1064,10 @@ def fetch_dxy_pairs_incremental(weeks: int):
               if isinstance(r, list) and len(r) == 2 and r[0] >= cutoff]
 
     last = cached[-1][0] if cached else None
-    if last and (datetime.now() - datetime.strptime(last, "%Y-%m-%d")
-                 ).days <= 3:
-        print("  [缓存] 美元指数已是最新, 无需重复抓取")
+    # 与发布时点对齐: 只认最近一个已收盘的美股交易日 (同黄金 OHLC)
+    last_us = _latest_completed_us_trading_day()
+    if last and last >= last_us:
+        print(f"  [缓存] 美元指数已是最新 ({last_us} 已覆盖)")
         return cached
     if last:
         beg = datetime.strptime(last, "%Y-%m-%d") - timedelta(days=5)
@@ -977,7 +1076,7 @@ def fetch_dxy_pairs_incremental(weeks: int):
         beg = datetime.strptime(cutoff, "%Y-%m-%d")
         print(f"  [全量] 美元指数抓取 {cutoff} 以来的数据")
 
-    end = datetime.now()
+    end = datetime.strptime(last_us, "%Y-%m-%d")
     new_pairs = _fetch_pairs_eastmoney_range("100.UDI", beg, end, "美元指数")
     if not new_pairs:
         print("  [提示] 美元指数切换到 yfinance 数据源")
