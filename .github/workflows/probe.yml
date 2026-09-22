@@ -50,23 +50,24 @@ jobs:
                       page.wait_for_timeout(3000)
                   print("title:", page.title()[:60])
                   print("xhr bodies:", json.dumps(bodies[:6], ensure_ascii=False)[:800])
-                  # 常见候选接口探测
+                  # 从 JS bundle 里找 put-call-ratios 的真实 API 路径与参数
                   r = page.evaluate("""(async () => {
-                    const out = [];
-                    const tries = [
-                      '/proxies/core-api/v1/options/put-call-ratios?symbol=GLD',
-                      '/proxies/options-api/v1/put-call-ratios?symbol=GLD',
-                      '/proxies/core-api/v1/options/getPutCallRatios?symbol=GLD',
-                    ];
-                    for (const u of tries) {
+                    const srcs = [...document.scripts].map(s => s.src).filter(Boolean);
+                    const pats = [];
+                    for (const u of srcs.slice(0, 40)) {
                       try {
-                        const r = await fetch(u, {headers: {'Accept': 'application/json'}});
-                        out.push({u: u.slice(0, 60), s: r.status, head: (await r.text()).slice(0, 120)});
-                      } catch (e) { out.push({u: u.slice(0, 60), err: String(e).slice(0, 60)}); }
+                        const t = await (await fetch(u)).text();
+                        for (const m of t.matchAll(/["'`]([^"'`]{0,90}put[-_]?call[^"'`]{0,90})["'`]/gi)) {
+                          pats.push(m[1]);
+                        }
+                        for (const m of t.matchAll(/["'`](\\/proxies\\/[^"'`]{5,90})["'`]/g)) {
+                          if (/option|put|call|pcr/i.test(m[1])) pats.push(m[1]);
+                        }
+                      } catch (e) {}
                     }
-                    return out;
+                    return [...new Set(pats)].slice(0, 30);
                   })()""")
-                  print("candidates:", json.dumps(r, ensure_ascii=False)[:700])
+                  print("js api patterns:", json.dumps(r, ensure_ascii=False)[:900])
                   browser.close()
           except Exception:
               traceback.print_exc()
