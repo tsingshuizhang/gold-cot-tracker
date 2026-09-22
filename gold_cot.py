@@ -752,8 +752,12 @@ def fetch_shfe_pcr_incremental(weeks: int):
     days = []
     d = datetime.strptime(cutoff, "%Y-%m-%d")
     cap = today if today.hour >= 20 else today - timedelta(days=1)
+    # 最近 2 天已有数据也重抓: 源站可能修正刚发布的结果,
+    # 用确定后的数据覆盖首日的不准确值 (休市 gaps 不重抓)
+    recent = (cap - timedelta(days=2)).strftime("%Y-%m-%d")
     while d <= cap:
-        if d.strftime("%Y-%m-%d") not in have | no_data:
+        ds = d.strftime("%Y-%m-%d")
+        if ds not in no_data and (ds not in have or ds >= recent):
             days.append(d)
         d += timedelta(days=1)
     if not days:
