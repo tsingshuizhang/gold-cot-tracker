@@ -128,11 +128,11 @@
     COT 报告由美国 CFTC 每周五发布(数据截至当周周二), 原始频率为周;
     月/季/年维度取该周期最后一期持仓。<br>
     <b>黄金期权 PCR</b>(看跌/看涨): 沪金期权为上期所官方日频数据
-    (成交量与持仓量两个口径); COMEX 期权 PCR 来自 Barchart,
-    源站反爬/网络受限时该线自动隐藏。
+    (成交量与持仓量两个口径); 美国 GLD 期权 PCR 来自 Yahoo 期权链快照
+    (GLD 为 CBOE 上市流动性最好的美国黄金相关期权, 网络受限时该线自动隐藏)。
     PCR &gt; 1 表示看跌成交/持仓多于看涨, 市场情绪偏空; 反之偏多。<br>
     点击图例<b>单独显示</b>成交量或持仓量 PCR 时, 会自动叠加 ±1σ 标准差上下轨
-    (灰色虚线, 滚动 60 日窗口); COMEX 期权 PCR 来自 Barchart/Yahoo, 不可用时自动隐藏。<br>
+    (灰色虚线, 滚动 60 日窗口); 美国 GLD 期权 PCR 来自 Yahoo, 不可用时自动隐藏。<br>
     K线/布林带/斐波那契/均线/MACD 等技术分析已移至
     <a href="dashboard_ta.html">技术分析页</a>, 两页数据互相独立。
     图表支持滚轮缩放与底部滑块拖动; 点击图例可显示/隐藏分项。
@@ -343,7 +343,7 @@ function render() {
           s => (s === 'COMEX 金价' ? price : dxy)),
         top: '55%', right: 48, show: !narrow },
       { data: ['沪金期权成交量 PCR', '沪金期权持仓量 PCR']
-          .concat(pcrC && pcrC.length ? ['COMEX 期权 PCR'] : []),
+          .concat(pcrC && pcrC.length ? ['美国 GLD 期权 PCR'] : []),
         top: '76%', right: 48, itemWidth: 14, show: !narrow },
     ],
     grid: [
@@ -444,7 +444,7 @@ function render() {
         itemStyle: { color: '#e67e22' },
       }] : []),
       ...(pcrC && pcrC.length ? [{
-        name: 'COMEX 期权 PCR', type: 'line', xAxisIndex: 5, yAxisIndex: 7,
+        name: '美国 GLD 期权 PCR', type: 'line', xAxisIndex: 5, yAxisIndex: 7,
         data: pcrC, showSymbol: false,
         lineStyle: { width: 1.3, color: '#27ae60' },
         itemStyle: { color: '#27ae60' },

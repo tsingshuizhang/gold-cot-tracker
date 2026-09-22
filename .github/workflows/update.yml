@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12'
 
       - name: 安装依赖
-        run: pip install yfinance
+        run: pip install yfinance curl_cffi
 
       - name: 抓取数据并生成看板 (增量缓存, 只补缺失数据)
         env:

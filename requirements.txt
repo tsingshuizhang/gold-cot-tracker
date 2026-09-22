@@ -2,3 +2,6 @@
 # 以下仅在需要画图和金价叠加时安装:
 matplotlib
 yfinance
+# 美国 GLD 期权 PCR (Yahoo 期权链, 需 Chrome TLS 指纹过限流)
+curl_cffi
+

@@ -23,8 +23,9 @@
   (`shfe.com.cn/data/tradedata/option/dailydata/kx{日期}.dat`), 主源;
   单线程顺序增量抓取 (并发高频请求会触发源站限流),
   休市日记入 gaps 缓存不再重复请求;
-  COMEX 黄金期权 PCR 来自 Barchart(历史回填)/ Yahoo 期权链快照(逐日累积),
-  属 best-effort 备用源 (两源均受限时自动降级, 看板隐藏该线)
+  美国黄金期权 PCR 来自 GLD 黄金ETF 期权链 (Yahoo, CBOE 上市, 流动性最好
+  的美国黄金相关期权; COMEX 期货期权免费渠道不可用, 用 GLD 作情绪代理),
+  best-effort (Yahoo 限流时自动降级, 看板隐藏该线)
 
 COT 报告每周五发布(数据截至当周周二)。
 
@@ -73,7 +74,7 @@ python gold_cot.py all                   # 一次全部执行
 4. **总持仓 Open Interest** — 市场总体热度
 5. **金价 vs 美元指数 DXY** — 双轴对照
 6. **黄金期权 PCR (看跌/看涨)** — 沪金期权成交量 PCR 与持仓量 PCR
-   (上期所官方日频, 2024-03 起); COMEX 黄金期权 PCR (Barchart/Yahoo) 可用时并列显示;
+   (上期所官方日频, 2024-03 起); 美国 GLD 期权 PCR (Yahoo 期权链) 可用时并列显示;
    灰色虚线为 PCR = 1 基准线, 高于 1 表示看跌成交/持仓多于看涨, 情绪偏空;
    点击图例**单独显示**某条沪金 PCR 时, 自动叠加 ±1σ 标准差上下轨
    (灰色虚线, 滚动 60 日窗口)
@@ -123,7 +124,7 @@ MACD 参数 (12, 26, 9), `DIF = EMA12 − EMA26`, `DEA = EMA(DIF, 9)`,
 - `data/ta_ohlc.json` — 黄金日频 OHLC 增量缓存 (已有数据不重复抓取)
 - `data/dxy_daily.json` — 美元指数日频收盘价增量缓存 (同上策略)
 - `data/gold_pcr_shfe.json` — 沪金期权 PCR 日频增量缓存 (磁盘永久保留全部历史)
-- `data/gold_pcr_comex.json` — COMEX 期权 PCR 缓存 (best-effort, 可能不存在)
+- `data/gold_pcr_gld.json` — 美国 GLD 期权 PCR 缓存 (best-effort, 逐日累积)
 - `data/gold_cot_disaggregated.csv` — 管理基金/生产商/掉期商分项持仓
 - `data/gold_cot_legacy.csv` — 商业/非商业传统分类持仓
 - `data/cache/` — CFTC 年度 zip 缓存
