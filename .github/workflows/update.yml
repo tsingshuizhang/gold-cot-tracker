@@ -1,11 +1,14 @@
 # 定时更新看板数据并发布到 GitHub Pages
-# 触发: 每天 UTC 23:30 (北京时间次日 07:30); COT 每周五 15:30 ET 发布后当天即可带上
+# 触发:
+#   - 每天 UTC 23:30 (北京时间次日 07:30): 全量检查; COT 每周五 15:30 ET 发布后当天即可带上
+#   - 美股交易时段 (UTC 14-21, 周一至五) 每小时: 刷新盘中实时行情 (技术分析页时效性)
 # 手动触发: Actions 页面点 "Run workflow"
 name: update-data
 
 on:
   schedule:
     - cron: '30 23 * * *'
+    - cron: '0 14-21 * * 1-5'
   workflow_dispatch:
 
 permissions:

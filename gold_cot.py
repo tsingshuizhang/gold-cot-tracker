@@ -621,7 +621,8 @@ def fetch_gold_ohlc(weeks: int):
     """COMEX 黄金日频 OHLC -> [[日期, 开, 收, 高, 低], ...], 失败返回 None。
 
     带本地增量缓存 (data/ta_ohlc.json): 已有历史数据绝不重复抓取,
-    每次只补最后几天到今天的缺失数据; 缓存已覆盖到今天时直接返回缓存。
+    每次只补抓最后几天到今天的尾部 (含盘中未收盘的实时 bar,
+    收盘后自动定型); 网络失败时降级用旧缓存。
     """
     cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
               ).strftime("%Y-%m-%d")
@@ -634,23 +635,17 @@ def fetch_gold_ohlc(weeks: int):
     cached = [r for r in cached
               if isinstance(r, list) and len(r) == 5 and r[0] >= cutoff]
 
-    today = datetime.now().strftime("%Y-%m-%d")
     last = cached[-1][0] if cached else None
-    # 与发布时点对齐: 只认最近一个已收盘的美股交易日 (17:00 ET 收盘),
-    # 缓存已覆盖该日则不再发请求 (规则: 增量 + 发布时点后刷新)
-    last_us = _latest_completed_us_trading_day()
-    if last and last >= last_us:
-        print(f"  [缓存] 黄金 OHLC 已是最新 ({last_us} 已覆盖)")
-        return cached
+    # 时效性优先 (技术分析页需要实时行情): 每次运行都补抓最近几天的尾部,
+    # 包含盘中未收盘的实时 bar (收盘后自动定型); 历史部分仍绝不重复抓取
     if last:
         beg = datetime.strptime(last, "%Y-%m-%d") - timedelta(days=5)
-        print(f"  [增量] 黄金 OHLC 仅补齐 {beg:%Y-%m-%d} 以来的缺失数据")
+        print(f"  [增量] 黄金 OHLC 补齐 {beg:%Y-%m-%d} 以来的最新数据 (含实时 bar)")
     else:
         beg = datetime.strptime(cutoff, "%Y-%m-%d")
         print(f"  [全量] 黄金 OHLC 抓取 {cutoff} 以来的数据")
 
-    end = datetime.strptime(last_us, "%Y-%m-%d")
-    new_rows = _fetch_ohlc_range(beg, end) or []
+    new_rows = _fetch_ohlc_range(beg, datetime.now()) or []
     merged = {r[0]: r for r in cached}
     for r in new_rows:
         merged[r[0]] = r
@@ -748,16 +743,16 @@ def fetch_shfe_pcr_incremental(weeks: int):
     cached = [r for r in stored if r[0] >= cutoff]
 
     today = datetime.now()
-    # 补齐窗口 [cutoff, 昨天] 内所有缺失日期 (只请求缺失日,
+    # 补齐窗口 [cutoff, cap] 内所有缺失日期 (只请求缺失日,
     # 因此先用小窗口跑过, 再切换大窗口时也会回补中间历史)。
-    # 不请求今天: 上期所日行情当日晚间才发布, 白天/清晨请求会把今天
-    # 误记为休市日(gaps)导致永久缺失。
+    # 上期所日行情当日晚间(约 20:00 北京时间)才发布: 傍晚后可抓今天,
+    # 白天/清晨只到昨天, 避免把未发布的今天误记为休市日(gaps)导致永久缺失。
     have = {r[0] for r in stored}
     no_data = set(gaps)
     days = []
     d = datetime.strptime(cutoff, "%Y-%m-%d")
-    yesterday = today - timedelta(days=1)
-    while d <= yesterday:
+    cap = today if today.hour >= 20 else today - timedelta(days=1)
+    while d <= cap:
         if d.strftime("%Y-%m-%d") not in have | no_data:
             days.append(d)
         d += timedelta(days=1)
@@ -775,8 +770,10 @@ def fetch_shfe_pcr_incremental(weeks: int):
         if r:
             fetched[r[0]] = r
             consecutive_errors = 0
-        elif status == "nodata":   # 源站确认无数据, 记录后不再请求
-            gaps.append(d0.strftime("%Y-%m-%d"))
+        elif status == "nodata":   # 源站确认无数据
+            # 近 2 天的"无数据"可能是发布延迟而非休市, 不记 gaps 下次重试
+            if d0 < today - timedelta(days=2):
+                gaps.append(d0.strftime("%Y-%m-%d"))
             consecutive_errors = 0
         else:
             consecutive_errors += 1
@@ -1064,19 +1061,15 @@ def fetch_dxy_pairs_incremental(weeks: int):
               if isinstance(r, list) and len(r) == 2 and r[0] >= cutoff]
 
     last = cached[-1][0] if cached else None
-    # 与发布时点对齐: 只认最近一个已收盘的美股交易日 (同黄金 OHLC)
-    last_us = _latest_completed_us_trading_day()
-    if last and last >= last_us:
-        print(f"  [缓存] 美元指数已是最新 ({last_us} 已覆盖)")
-        return cached
+    # 时效性优先 (同黄金 OHLC): 每次补抓最近几天尾部, 含盘中实时 bar
     if last:
         beg = datetime.strptime(last, "%Y-%m-%d") - timedelta(days=5)
-        print(f"  [增量] 美元指数仅补齐 {beg:%Y-%m-%d} 以来的缺失数据")
+        print(f"  [增量] 美元指数补齐 {beg:%Y-%m-%d} 以来的最新数据")
     else:
         beg = datetime.strptime(cutoff, "%Y-%m-%d")
         print(f"  [全量] 美元指数抓取 {cutoff} 以来的数据")
 
-    end = datetime.strptime(last_us, "%Y-%m-%d")
+    end = datetime.now()
     new_pairs = _fetch_pairs_eastmoney_range("100.UDI", beg, end, "美元指数")
     if not new_pairs:
         print("  [提示] 美元指数切换到 yfinance 数据源")
