@@ -972,26 +972,42 @@ def _load_cot_cache() -> tuple[dict, dict]:
 
 
 def _save_cot_cache(disagg: list[dict], legacy: list[dict]) -> None:
+    """合并写入磁盘缓存: 按报告日期取并集, 新抓取的数据覆盖同日旧值,
+    任何窗口的抓取都只会补充数据, 绝不删除已有历史。"""
+    old_disagg, old_legacy = _load_cot_cache()
+    merged_disagg = {**old_disagg, **{r["report_date"]: r for r in disagg}}
+    merged_legacy = {**old_legacy, **{r["report_date"]: r for r in legacy}}
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     COT_CACHE.write_text(json.dumps(
-        {"disagg": disagg, "legacy": legacy}, ensure_ascii=False),
-        encoding="utf-8")
+        {"disagg": [merged_disagg[d] for d in sorted(merged_disagg)],
+         "legacy": [merged_legacy[d] for d in sorted(merged_legacy)]},
+        ensure_ascii=False), encoding="utf-8")
 
 
 def load_history(weeks: int, with_legacy: bool = True
                  ) -> tuple[list[dict], list[dict]]:
     """抓取并整理历史数据, 返回 (disaggregated, legacy)。
 
-    带磁盘缓存 (data/gold_cot_cache.json): COT 每周五 15:30 ET 才发布,
-    缓存已覆盖最近一期已发布报告时直接跳过网络请求。
+    带磁盘缓存 (data/gold_cot_cache.json), 命中需同时满足:
+    ① 新鲜度: 已覆盖最近一期已发布报告 (COT 每周五 15:30 ET 发布);
+    ② 窗口: 已覆盖请求的 weeks 窗口 (窗口不足时只回补缺失的旧段,
+       小窗口运行不会截断已有历史——缓存永远只增不减)。
     """
     latest_expected = _latest_cot_report_date()
+    cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
+              ).strftime("%Y-%m-%d")
     cached_disagg, cached_legacy = _load_cot_cache()
     have_disagg = (max(cached_disagg) if cached_disagg else None)
     have_legacy = (max(cached_legacy) if cached_legacy else None)
-    if (have_disagg and have_disagg >= latest_expected
-            and (not with_legacy
-                 or (have_legacy and have_legacy >= latest_expected))):
+    oldest_disagg = (min(cached_disagg) if cached_disagg else None)
+    oldest_legacy = (min(cached_legacy) if cached_legacy else None)
+    fresh = (have_disagg and have_disagg >= latest_expected
+             and (not with_legacy
+                  or (have_legacy and have_legacy >= latest_expected)))
+    full_window = (oldest_disagg and oldest_disagg <= cutoff
+                   and (not with_legacy
+                        or (oldest_legacy and oldest_legacy <= cutoff)))
+    if fresh and full_window:
         print(f"  [缓存] COT 已是最新 (最新报告 {have_disagg}, "
               f"周五 15:30 ET 发布新报告后才需抓取)")
         disagg = [cached_disagg[d] for d in sorted(cached_disagg)]
@@ -1002,7 +1018,11 @@ def load_history(weeks: int, with_legacy: bool = True
                                     "comm_net"])
         return disagg, legacy
 
-    print(f"正在从 CFTC 抓取黄金 COT 数据 (最近 {weeks} 周)...")
+    if fresh:
+        print(f"  [增量] COT 回补 {cutoff} 之前的历史段 "
+              f"(缓存最早只到 {oldest_disagg})")
+    else:
+        print(f"正在从 CFTC 抓取黄金 COT 数据 (最近 {weeks} 周)...")
     disagg_raw = fetch_gold_cot(DATASET_DISAGGREGATED, weeks)
     legacy_raw = (fetch_gold_cot(DATASET_LEGACY, weeks)
                   if with_legacy else [])
