@@ -994,19 +994,28 @@ def load_history(weeks: int, with_legacy: bool = True
        小窗口运行不会截断已有历史——缓存永远只增不减)。
     """
     latest_expected = _latest_cot_report_date()
-    cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
-              ).strftime("%Y-%m-%d")
     cached_disagg, cached_legacy = _load_cot_cache()
     have_disagg = (max(cached_disagg) if cached_disagg else None)
     have_legacy = (max(cached_legacy) if cached_legacy else None)
     oldest_disagg = (min(cached_disagg) if cached_disagg else None)
     oldest_legacy = (min(cached_legacy) if cached_legacy else None)
+
+    def _covers_window(oldest: str | None, have: str | None) -> bool:
+        """缓存是否覆盖请求的窗口: 用时间跨度判断 (容差 7 天),
+        而不是 oldest <= cutoff —— 后者因 cutoff 逐日后移会永久误判,
+        导致每次都做一次无效的全窗口回补抓取。"""
+        if not oldest or not have:
+            return False
+        span = (datetime.strptime(have, "%Y-%m-%d")
+                - datetime.strptime(oldest, "%Y-%m-%d")).days
+        return span >= weeks * 7 - 7
+
     fresh = (have_disagg and have_disagg >= latest_expected
              and (not with_legacy
                   or (have_legacy and have_legacy >= latest_expected)))
-    full_window = (oldest_disagg and oldest_disagg <= cutoff
+    full_window = (_covers_window(oldest_disagg, have_disagg)
                    and (not with_legacy
-                        or (oldest_legacy and oldest_legacy <= cutoff)))
+                        or _covers_window(oldest_legacy, have_legacy)))
     if fresh and full_window:
         print(f"  [缓存] COT 已是最新 (最新报告 {have_disagg}, "
               f"周五 15:30 ET 发布新报告后才需抓取)")
@@ -1019,8 +1028,9 @@ def load_history(weeks: int, with_legacy: bool = True
         return disagg, legacy
 
     if fresh:
-        print(f"  [增量] COT 回补 {cutoff} 之前的历史段 "
-              f"(缓存最早只到 {oldest_disagg})")
+        print(f"  [增量] COT 回补历史段 (缓存仅覆盖 {weeks} 周中的 "
+              f"{(datetime.strptime(have_disagg, '%Y-%m-%d') - datetime.strptime(oldest_disagg, '%Y-%m-%d')).days // 7} 周,"
+              f" 最早只到 {oldest_disagg})")
     else:
         print(f"正在从 CFTC 抓取黄金 COT 数据 (最近 {weeks} 周)...")
     disagg_raw = fetch_gold_cot(DATASET_DISAGGREGATED, weeks)
