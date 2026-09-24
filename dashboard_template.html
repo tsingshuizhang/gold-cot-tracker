@@ -314,7 +314,8 @@ function render() {
   const gap = Math.round(Math.min(30, Math.max(14, totalH * 0.035)));
   const sumW = PANEL_W.reduce((a, b) => a + b, 0);
   // 面板高度 h 已内含标题占位, 只需扣除面板间距
-  const unit = Math.max(30, (totalH - gap * 5) / sumW);
+  // 底部预留 36px 给时间滑轨, 避免与最后一面板重叠
+  const unit = Math.max(30, (totalH - gap * 5 - 36) / sumW);
   const layout = [];
   {
     let y = 0;

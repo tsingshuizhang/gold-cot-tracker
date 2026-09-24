@@ -269,6 +269,26 @@ function render(ta) {
   // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
   const narrow = window.innerWidth < 768 || window.innerHeight < 500;
+
+  // ---- 面板布局: 按像素分配 (任何分辨率下面板边界都清晰, 与持仓页一致) ----
+  const PANEL_W = [2.2, 1.4, 0.9, 1.0];                // 4 面板高度权重
+  const totalH = document.getElementById('chart').clientHeight;
+  const titleH = narrow ? 16 : 20;
+  const gap = Math.round(Math.min(30, Math.max(14, totalH * 0.035)));
+  const sumW = PANEL_W.reduce((a, b) => a + b, 0);
+  // 底部预留 36px 给时间滑轨, 避免与最后一面板重叠
+  const unit = Math.max(40, (totalH - gap * 3 - 36) / sumW);
+  const layout = [];
+  {
+    let y = 0;
+    for (let i = 0; i < 4; i++) {
+      const h = unit * PANEL_W[i];
+      layout.push({ titleTop: y,
+                    gridTop: y + titleH,
+                    gridH: Math.max(48, h - titleH - 4) });
+      y += h + gap;
+    }
+  }
   const dates = ohlc.map(r => r[0]);
   const closes = ohlc.map(r => r[2]);
   const klineData = ohlc.map(r => [r[0], r[1], r[2], r[4], r[3]]); // x,开,收,低,高
@@ -311,14 +331,16 @@ function render(ta) {
   const option = {
     animation: false,
     title: [
-      { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 60, top: 8,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
-      { text: '收盘价 + 均线 MA', left: 60, top: '35%',
+      { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 60,
+        top: layout[0].titleTop, textStyle: { fontSize: narrow ? 10 : 13 } },
+      { text: '收盘价 + 均线 MA', left: 60, top: layout[1].titleTop,
         textStyle: { fontSize: narrow ? 10 : 13 } },
       { text: '金价 vs 行业平均开采成本 (AISC) 及 金价/AISC 比值',
-        left: 60, top: '59%', textStyle: { fontSize: narrow ? 10 : 13 } },
+        left: 60, top: layout[2].titleTop,
+        textStyle: { fontSize: narrow ? 10 : 13 } },
       { text: 'MACD(12, 26, 9) — 金叉 / 死叉 / 顶背离 / 底背离',
-        left: 60, top: '75%', textStyle: { fontSize: narrow ? 10 : 13 } },
+        left: 60, top: layout[3].titleTop,
+        textStyle: { fontSize: narrow ? 10 : 13 } },
     ],
     tooltip: {
       trigger: 'axis',
@@ -347,35 +369,41 @@ function render(ta) {
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     legend: [
       { data: ['COMEX 黄金K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'],
-        top: 6, right: 48, itemWidth: 14, show: !narrow },
+        top: layout[0].titleTop, right: 48, itemWidth: 14, show: !narrow },
       { data: ['收盘价'].concat(maDefs.map(([n]) => 'MA' + n)),
-        top: '35%', right: 48, itemWidth: 14, show: !narrow },
+        top: layout[1].titleTop, right: 48, itemWidth: 14, show: !narrow },
       { data: ['COMEX 金价', '平均开采成本 AISC', '金价/AISC 比值'],
-        top: '59%', right: 48, show: !narrow },
-      { data: ['DIF', 'DEA', 'MACD 柱'], top: '75%', right: 48,
-        show: !narrow },
+        top: layout[2].titleTop, right: 48, show: !narrow },
+      { data: ['DIF', 'DEA', 'MACD 柱'], top: layout[3].titleTop,
+        right: 48, show: !narrow },
     ],
-    grid: [
-      { left: 60, right: 48, top: 40, height: '27%' },
-      { left: 60, right: 48, top: '36%', height: '21%' },
-      { left: 60, right: 48, top: '60%', height: '13%' },
-      { left: 60, right: 48, top: '76%', height: '14%' },
-    ],
+    grid: [0, 1, 2, 3].map(i => ({
+      left: 60, right: 48,
+      top: layout[i].gridTop, height: layout[i].gridH,
+      // 面板边框: 让每个图形区域边界明确, 不与相邻面板混叠
+      show: true, borderColor: 'rgba(0,0,0,0.10)', borderWidth: 1,
+    })),
     xAxis: [0, 1, 2, 3].map(i => ({
       type: 'time', gridIndex: i, show: i === 3,
       axisLabel: { hideOverlap: true },
     })),
     yAxis: [
-      { scale: true, gridIndex: 0,
-        splitLine: { lineStyle: { type: 'dashed' } } },
-      { scale: true, gridIndex: 1,
-        splitLine: { lineStyle: { type: 'dashed' } } },
-      { scale: true, gridIndex: 2,
-        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 0, splitNumber: 4,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+      { scale: true, gridIndex: 1, splitNumber: 4,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+      { scale: true, gridIndex: 2, splitNumber: 3,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
       { scale: true, gridIndex: 2, position: 'right', min: 0,
+        splitNumber: 3,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
         splitLine: { show: false } },
-      { scale: true, gridIndex: 3,
-        splitLine: { lineStyle: { type: 'dashed' } } },
+      { scale: true, gridIndex: 3, splitNumber: 3,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1, 2, 3],
