@@ -7,16 +7,13 @@
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; }
+  /* 自然流布局: 每个图形有舒适的固定高度, 超出视口时页面滚动 */
+  html, body { height: auto; }
   body {
     font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     background: #f5f6fa; color: #2c3e50; padding: 20px;
-    display: flex; flex-direction: column;
   }
-  .container {
-    width: 100%; flex: 1; min-height: 0;
-    display: flex; flex-direction: column;
-  }
+  .container { width: 100%; }
   .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
             margin-bottom: 10px; }
   h1 { font-size: 20px; }
@@ -37,18 +34,16 @@
   #chart {
     background: #fff; border-radius: 10px;
     box-shadow: 0 1px 4px rgba(0,0,0,.06);
-    width: 100%; flex: 1; min-height: 320px;
+    width: 100%;
+    height: 1122px;   /* JS 按面板舒适高度重算 */
   }
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
   .note-short { display: none; }
 
   /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
   @media (max-width: 768px), (max-height: 500px) {
-    /* 放弃"铺满窗口", 恢复自然流: 图表固定高度, 页面整体滚动 */
-    html, body { height: auto; }
-    body { display: block; padding: 10px; }
-    .container { flex: none; display: block; min-height: 0; }
-    #chart { flex: none; height: 700px; min-height: 0; }
+    body { padding: 10px; }
+    #chart { height: 1122px; }   /* JS 按面板舒适高度重算 */
     h1 { font-size: 17px; }
     .header { gap: 10px; margin-bottom: 8px; }
     .navlink { font-size: 12px; }
@@ -270,23 +265,22 @@ function render(ta) {
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
   const narrow = window.innerWidth < 768 || window.innerHeight < 500;
 
-  // ---- 面板布局: 按像素分配 (任何分辨率下面板边界都清晰, 与持仓页一致) ----
-  const PANEL_W = [2.2, 1.4, 0.9, 1.0];                // 4 面板高度权重
-  const totalH = document.getElementById('chart').clientHeight;
+  // ---- 面板布局: 每面板固定舒适高度, 高度优先于铺满窗口 (与持仓页一致) ----
+  const PANEL_H = [360, 240, 180, 220];                // 4 面板舒适高度
   const titleH = narrow ? 16 : 20;
-  const gap = Math.round(Math.min(30, Math.max(14, totalH * 0.035)));
-  const sumW = PANEL_W.reduce((a, b) => a + b, 0);
+  const gap = narrow ? 18 : 22;
   // 底部预留 36px 给时间滑轨, 避免与最后一面板重叠
-  const unit = Math.max(40, (totalH - gap * 3 - 36) / sumW);
+  const totalH = titleH * 4 + PANEL_H.reduce((a, b) => a + b, 0)
+                 + gap * 3 + 36;
+  document.getElementById('chart').style.height = totalH + 'px';
   const layout = [];
   {
     let y = 0;
     for (let i = 0; i < 4; i++) {
-      const h = unit * PANEL_W[i];
       layout.push({ titleTop: y,
                     gridTop: y + titleH,
-                    gridH: Math.max(48, h - titleH - 4) });
-      y += h + gap;
+                    gridH: PANEL_H[i] - titleH - 6 });
+      y += PANEL_H[i] + gap;
     }
   }
   const dates = ohlc.map(r => r[0]);
