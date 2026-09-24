@@ -1195,6 +1195,12 @@ def cmd_dashboard(weeks: int) -> None:
               " 看板将只显示沪金期权 PCR")
     pcr_data = {"shfe": pcr_shfe or [], "comex": pcr_us or None}
 
+    # 同步导出 App 用 JSON 端点 (iOS App 直接消费, 无需解析 HTML)
+    (DATA_DIR / "cot_data.json").write_text(json.dumps({
+        "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "cot": cot_data, "price": price_data, "dxy": dxy_data, "pcr": pcr_data,
+    }, ensure_ascii=False), encoding="utf-8")
+
     tpl_path = BASE_DIR / "dashboard_template.html"
     html = tpl_path.read_text(encoding="utf-8")
     html = html.replace("/*__COT_DATA__*/[]",

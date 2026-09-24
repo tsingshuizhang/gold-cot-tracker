@@ -3,6 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="黄金COT">
+<link rel="apple-touch-icon" href="app-icon.png">
 <title>黄金 CFTC COT 持仓看板</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
 <style>
@@ -23,6 +27,12 @@
     border-radius: 6px; text-decoration: none; white-space: nowrap; margin-top: 2px;
   }
   .pagelink:hover { background: #e67e22; }
+
+  .applink {
+    font-size: 13px; color: #fff; background: #2980b9; padding: 7px 16px;
+    border-radius: 6px; text-decoration: none; white-space: nowrap; margin-top: 2px;
+  }
+  .applink:hover { background: #2471a3; }
 
   .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .card {
@@ -86,6 +96,7 @@
 <body>
 <div class="container">
   <div class="header">
+    <a class="applink" href="app/index.html">📱 iOS App</a>
     <div>
       <h1>黄金 CFTC COT 持仓看板</h1>
       <div class="subtitle" id="subtitle">COMEX 黄金期货 · 数据来源: 美国 CFTC 官方</div>

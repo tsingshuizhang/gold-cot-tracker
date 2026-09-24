@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="黄金COT">
+<link rel="apple-touch-icon" href="app-icon.png">
+<title>黄金 COT 看板 iOS App - 安装指引</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #2c3e50; padding: 24px; line-height: 1.8;
+  }
+  .box { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: #7f8c8d; font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: #fff; border-radius: 10px; padding: 18px 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 14px;
+  }
+  h2 { font-size: 16px; margin-bottom: 8px; color: #2c3e50; }
+  ol, ul { padding-left: 22px; font-size: 14px; }
+  code {
+    background: #f0f2f5; padding: 1px 6px; border-radius: 4px;
+    font-size: 13px; color: #c0392b;
+  }
+  pre {
+    background: #2c3e50; color: #ecf0f1; padding: 12px 16px;
+    border-radius: 8px; font-size: 13px; overflow-x: auto; margin: 8px 0;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .btn {
+    display: inline-block; background: #f39c12; color: #fff;
+    padding: 10px 22px; border-radius: 8px; text-decoration: none;
+    font-size: 15px; margin-top: 6px;
+  }
+  .btn:hover { background: #e67e22; }
+  .note { font-size: 12px; color: #95a5a6; }
+  a { color: #2980b9; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>黄金 COT 看板 iOS App</h1>
+  <div class="sub">原生 SwiftUI · 与网页版同源同口径 · 数据每小时自动更新</div>
+
+  <div class="card">
+    <h2>功能一览</h2>
+    <ul>
+      <li><b>持仓看板</b>：最新报告卡片、周/月/季/年切换、管理基金净持仓 vs 金价（双轴）、五类交易者对比、多空分项、总持仓、金价 vs 美元指数、黄金期权 PCR（沪金 + 美国 GLD）</li>
+      <li><b>技术分析</b>：日K/周K/月K、K线+布林带+斐波那契回撤位、MA5-250、金价 vs 开采成本 AISC、MACD 金叉/死叉标注</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>方式一：一键"添加到主屏幕"（无需安装，推荐）</h2>
+    <p>网页版已完美适配手机，用 Safari 打开看板后：</p>
+    <ol>
+      <li>点底部分享按钮 <b>⎋</b></li>
+      <li>选"添加到主屏幕"</li>
+      <li>桌面上即出现独立图标，全屏运行如原生 App</li>
+    </ol>
+    <p class="note">零成本、自动更新、不占存储，体验与 App 基本一致。</p>
+  </div>
+
+  <div class="card">
+    <h2>方式二：源码构建原生 App（需 Mac + Xcode）</h2>
+    <p>下载源码包，三步构建：</p>
+    <pre><code>brew install xcodegen   # 只需一次
+cd app && xcodegen
+open GoldCotTracker.xcodeproj   # ⌘R 运行</code></pre>
+    <ol>
+      <li>下载：<a class="btn" href="./GoldCotTracker-app.zip">下载源码包 (GoldCotTracker-app.zip)</a></li>
+      <li>解压后进入 <code>app/</code> 目录，执行上面的命令</li>
+      <li>模拟器直接运行；真机用免费 Apple ID 登录 Xcode，勾选
+          <code>Automatically manage signing</code> 即可安装到自己手机（7 天重签）</li>
+    </ol>
+    <p class="note">源码已包含完整工程配置（project.yml），详见包内 README.md。
+    分发给他人安装需要 Apple Developer 付费账号（$99/年）签名。</p>
+  </div>
+
+  <div class="card">
+    <h2>数据源</h2>
+    <p>App 与本网页读取同一份数据（GitHub Actions 每小时自动更新）：</p>
+    <ul>
+      <li><code>data/cot_data.json</code> — COT 持仓 / 金价 / 美元指数 / 期权 PCR</li>
+      <li><code>data/ta_data.js</code> — 技术分析行情（OHLC / 开采成本）</li>
+    </ul>
+    <p style="margin-top:10px"><a href="./dashboard.html">← 返回持仓看板</a>　·　<a href="./dashboard_ta.html">技术分析页 →</a></p>
+  </div>
+</div>
+</body>
+</html>

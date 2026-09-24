@@ -1,0 +1,28 @@
+name: GoldCotTracker
+options:
+  bundleIdPrefix: com.tsingshuizhang
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  GoldCotTracker:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: 黄金COT看板
+        UILaunchStoryboardName: ""
+        UILaunchScreen:
+          UIColorName: ""
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
