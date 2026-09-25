@@ -47,9 +47,9 @@ struct CandleChartView: View {
                 ctx.stroke(path, with: .color(color.opacity(0.7)),
                            style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
             }
-            line(boll.upper, .blue)
-            line(boll.mid, .blue)
-            line(boll.lower, .blue)
+            line(boll.upper, color: .blue)
+            line(boll.mid, color: .blue)
+            line(boll.lower, color: .blue)
 
             // K线
             for (i, r) in ohlc.enumerated() {

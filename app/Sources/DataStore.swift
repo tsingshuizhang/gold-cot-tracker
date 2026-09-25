@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+let dbg = Logger(subsystem: "com.tsingshuizhang.GoldCotTracker", category: "debug")
 
 /// 数据服务: 抓取网站已发布的数据 (JSON 端点 + ta_data.js)
 @MainActor
@@ -42,16 +45,22 @@ final class DataStore: ObservableObject {
     func refresh() async {
         loading = true
         errorMessage = nil
-        do {
-            async let cotTask = fetchCot()
-            async let taTask = fetchTa()
-            let (c, t) = try await (cotTask, taTask)
-            self.cot = c
-            self.ta = t
-        } catch {
-            errorMessage = "数据加载失败: \(error.localizedDescription)\n请检查网络后重试"
+        dbg.log("refresh start")
+        // 两个数据源互相独立: 一个失败不影响另一个
+        do { self.cot = try await fetchCot(); dbg.log("cot ok: \(self.cot.cot.count)") }
+        catch {
+            dbg.log("cot fail: \(error.localizedDescription)")
+            errorMessage = "持仓数据加载失败: \(error.localizedDescription)"
+        }
+        do { self.ta = try await fetchTa(); dbg.log("ta ok: \(self.ta.ohlc.count)") }
+        catch {
+            dbg.log("ta fail: \(error.localizedDescription)")
+            if errorMessage == nil {
+                errorMessage = "行情数据加载失败: \(error.localizedDescription)"
+            }
         }
         loading = false
+        dbg.log("refresh done")
     }
 
     private func fetchCot() async throws -> CotPayload {
@@ -60,13 +69,14 @@ final class DataStore: ObservableObject {
 
         var p = CotPayload()
         p.updated = raw["updated"] as? String ?? ""
-        if let rows = raw["cot"] as? [[Any]] {
+        // cot 条目为对象: {d, net, lo, sh, oi, pm, sw, oth, nr}
+        if let rows = raw["cot"] as? [[String: Any]] {
             p.cot = rows.compactMap { r in
-                guard r.count >= 9, let d = DateUtil.parse(r[0] as? String ?? ""),
-                      let net = r[1] as? Double, let lo = r[2] as? Double,
-                      let sh = r[3] as? Double, let oi = r[4] as? Double,
-                      let pm = r[5] as? Double, let sw = r[6] as? Double,
-                      let oth = r[7] as? Double, let nr = r[8] as? Double
+                guard let ds = r["d"] as? String, let d = DateUtil.parse(ds),
+                      let net = r["net"] as? Double, let lo = r["lo"] as? Double,
+                      let sh = r["sh"] as? Double, let oi = r["oi"] as? Double,
+                      let pm = r["pm"] as? Double, let sw = r["sw"] as? Double,
+                      let oth = r["oth"] as? Double, let nr = r["nr"] as? Double
                 else { return nil }
                 return CotRecord(date: d, net: net, lo: lo, sh: sh, oi: oi,
                                  pm: pm, swap: sw, oth: oth, nr: nr)

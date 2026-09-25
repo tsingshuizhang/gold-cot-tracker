@@ -1,13 +1,32 @@
 import SwiftUI
-import Charts
 
 // MARK: - 持仓看板页 (与网页 dashboard.html 同功能)
 
 struct DashboardView: View {
     @EnvironmentObject private var store: DataStore
     @State private var dim: Dim = .week
+    @State private var range: ClosedRange<Double> = 0...1
+    @State private var hiddenNet: Set<String> = []
+    @State private var hiddenCat: Set<String> = []
+    @State private var hiddenLS: Set<String> = []
+    @State private var hiddenPD: Set<String> = []
+    @State private var hiddenPCR: Set<String> = []
 
     var series: [CotRecord] { store.cotSeries(dim: dim) }
+
+    /// 全页统一时间域 (所有序列日期最小~最大)
+    private var domain: ClosedRange<Date> {
+        var lo = Date.distantFuture, hi = Date.distantPast
+        for d in series.map(\.date) + store.cot.price.map(\.date)
+                + store.cot.dxy.map(\.date)
+                + store.cot.pcr.shfe.map(\.date)
+                + store.cot.pcr.gld.map(\.date) {
+            lo = min(lo, d); hi = max(hi, d)
+        }
+        return lo...hi
+    }
+
+    private var window: ClosedRange<Date> { Date().window(range, in: domain) }
 
     var body: some View {
         ScrollView {
@@ -33,6 +52,8 @@ struct DashboardView: View {
                 oiPanel
                 priceDxyPanel
                 pcrPanel
+
+                RangeSlider(range: $range)
             }
         }
         .navigationTitle("黄金 CFTC COT 持仓看板")
@@ -74,60 +95,51 @@ struct DashboardView: View {
         .padding(.vertical, 6)
     }
 
-    // MARK: 图1: 管理基金净持仓 vs 金价 (双轴)
+    // MARK: 图1: 管理基金净持仓 vs 金价 (柱 + 右轴线, Canvas)
 
     private var netPanel: some View {
-        Panel(title: "管理基金(机构大资金)净持仓 vs 金价", height: 200) {
-            DualAxisChart(height: 200) {
-                Chart(series) { r in
-                    BarMark(x: .value("日期", r.date), y: .value("净持仓", r.net))
-                        .foregroundStyle(r.net >= 0 ? C.mm : C.pm)
-                }
-                .chartLegend(.hidden)
-            } right: {
-                Chart(store.cot.price) { p in
-                    LineMark(x: .value("日期", p.date), y: .value("金价", p.value))
-                        .foregroundStyle(C.gold)
-                }
-                .chartLegend(.hidden)
+        let bars = downsample(series.filter { window.contains($0.date) })
+            .map { ($0.date, $0.net) }
+        let price = downsample(store.cot.price.filter { window.contains($0.date) })
+            .map { ($0.date, $0.value) }
+        return Panel(title: "管理基金(机构大资金)净持仓 vs 金价", height: 200) {
+            VStack(spacing: 4) {
+                LegendToggle(items: [("净持仓", C.mm), ("金价", C.gold)],
+                             hidden: $hiddenNet)
+                MultiLineCanvas(
+                    right: hiddenNet.contains("金价") ? [] :
+                        [CanvasSeries(name: "金价", color: C.gold, points: price)],
+                    bars: hiddenNet.contains("净持仓") ? [] : bars,
+                    height: 168)
             }
         }
     }
 
     // MARK: 图2: 各类交易者净持仓对比
 
-    private struct CatPoint: Identifiable {
-        let id = UUID()
-        let date: Date
-        let series: String
-        let value: Double
-    }
+    private let catDefs: [(String, Color)] = [
+        ("管理基金(机构)", C.mm), ("生产商/贸易商(套保)", C.pm),
+        ("掉期交易商", C.swap), ("其他报告(中小投机)", C.oth),
+        ("散户/非报告", C.nr),
+    ]
 
     private var categoryPanel: some View {
-        let pts = series.flatMap { r in
-            [("管理基金(机构)", r.net, C.mm),
-             ("生产商/贸易商(套保)", r.pm, C.pm),
-             ("掉期交易商", r.swap, C.swap),
-             ("其他报告(中小投机)", r.oth, C.oth),
-             ("散户/非报告", r.nr, C.nr)]
-                .map { CatPoint(date: r.date, series: $0.0, value: $0.1) }
-        }
-        let scale = Dictionary(uniqueKeysWithValues:
-            [("管理基金(机构)", C.mm), ("生产商/贸易商(套保)", C.pm),
-             ("掉期交易商", C.swap), ("其他报告(中小投机)", C.oth),
-             ("散户/非报告", C.nr)].map { ($0.0, $0.1) })
-        return Panel(title: "各类交易者净持仓对比", height: 160) {
-            Chart(pts) { p in
-                LineMark(x: .value("日期", p.date), y: .value("净持仓", p.value))
-                    .foregroundStyle(by: .value("分类", p.series))
+        let recs = downsample(series.filter { window.contains($0.date) })
+        let keypaths: [(String, KeyPath<CotRecord, Double>, Color)] = [
+            ("管理基金(机构)", \.net, C.mm), ("生产商/贸易商(套保)", \.pm, C.pm),
+            ("掉期交易商", \.swap, C.swap), ("其他报告(中小投机)", \.oth, C.oth),
+            ("散户/非报告", \.nr, C.nr),
+        ]
+        let seriesArr: [CanvasSeries] = keypaths
+            .filter { !hiddenCat.contains($0.0) }
+            .map { name, kp, color in
+                CanvasSeries(name: name, color: color,
+                             points: recs.map { ($0.date, $0[keyPath: kp]) })
             }
-            .chartForegroundStyleScale(scale)
-            .chartXAxis(.hidden)
-            .chartYAxis {
-                AxisMarks(position: .leading) {
-                    AxisGridLine().foregroundStyle(Color(.systemGray5))
-                    AxisValueLabel().foregroundStyle(C.axis)
-                }
+        return Panel(title: "各类交易者净持仓对比", height: 200) {
+            VStack(spacing: 4) {
+                LegendToggle(items: catDefs, hidden: $hiddenCat)
+                MultiLineCanvas(left: seriesArr, height: 158)
             }
         }
     }
@@ -135,22 +147,18 @@ struct DashboardView: View {
     // MARK: 图3: 管理基金多空分项
 
     private var longShortPanel: some View {
-        let pts = series.flatMap { r in
-            [("多头", r.lo, C.mm), ("空头", r.sh, C.pm)]
-                .map { CatPoint(date: r.date, series: $0.0, value: $0.1) }
-        }
-        return Panel(title: "管理基金多空分项", height: 160) {
-            Chart(pts) { p in
-                LineMark(x: .value("日期", p.date), y: .value("手", p.value))
-                    .foregroundStyle(by: .value("分项", p.series))
+        let recs = downsample(series.filter { window.contains($0.date) })
+        let arr: [CanvasSeries] = [
+            ("多头", \CotRecord.lo, C.mm), ("空头", \CotRecord.sh, C.pm),
+        ].filter { !hiddenLS.contains($0.0) }
+            .map { name, kp, color in
+                CanvasSeries(name: name, color: color,
+                             points: recs.map { ($0.date, $0[keyPath: kp]) })
             }
-            .chartForegroundStyleScale(["多头": C.mm, "空头": C.pm])
-            .chartXAxis(.hidden)
-            .chartYAxis {
-                AxisMarks(position: .leading) {
-                    AxisGridLine().foregroundStyle(Color(.systemGray5))
-                    AxisValueLabel().foregroundStyle(C.axis)
-                }
+        return Panel(title: "管理基金多空分项", height: 200) {
+            VStack(spacing: 4) {
+                LegendToggle(items: [("多头", C.mm), ("空头", C.pm)], hidden: $hiddenLS)
+                MultiLineCanvas(left: arr, height: 158)
             }
         }
     }
@@ -158,40 +166,32 @@ struct DashboardView: View {
     // MARK: 图4: 总持仓 OI
 
     private var oiPanel: some View {
-        Panel(title: "总持仓 Open Interest", height: 130) {
-            Chart(series) { r in
-                AreaMark(x: .value("日期", r.date), y: .value("OI", r.oi))
-                    .foregroundStyle(C.swap.opacity(0.3))
-                LineMark(x: .value("日期", r.date), y: .value("OI", r.oi))
-                    .foregroundStyle(C.swap)
-            }
-            .chartXAxis(.hidden)
-            .chartYAxis {
-                AxisMarks(position: .leading) {
-                    AxisGridLine().foregroundStyle(Color(.systemGray5))
-                    AxisValueLabel().foregroundStyle(C.axis)
-                }
-            }
-            .chartLegend(.hidden)
+        let recs = downsample(series.filter { window.contains($0.date) })
+        return Panel(title: "总持仓 Open Interest", height: 130) {
+            MultiLineCanvas(
+                left: [CanvasSeries(name: "OI", color: C.swap,
+                                    points: recs.map { ($0.date, $0.oi) })],
+                fillFirst: true, height: 128)
         }
     }
 
     // MARK: 图5: 金价 vs 美元指数 DXY (双轴)
 
     private var priceDxyPanel: some View {
-        Panel(title: "金价 vs 美元指数 DXY", height: 220) {
-            DualAxisChart(height: 220) {
-                Chart(store.cot.price) { p in
-                    LineMark(x: .value("日期", p.date), y: .value("金价", p.value))
-                        .foregroundStyle(C.gold)
-                }
-                .chartLegend(.hidden)
-            } right: {
-                Chart(store.cot.dxy) { p in
-                    LineMark(x: .value("日期", p.date), y: .value("DXY", p.value))
-                        .foregroundStyle(C.dxy)
-                }
-                .chartLegend(.hidden)
+        let price = downsample(store.cot.price.filter { window.contains($0.date) })
+            .map { ($0.date, $0.value) }
+        let dxy = downsample(store.cot.dxy.filter { window.contains($0.date) })
+            .map { ($0.date, $0.value) }
+        return Panel(title: "金价 vs 美元指数 DXY", height: 220) {
+            VStack(spacing: 4) {
+                LegendToggle(items: [("金价", C.gold), ("美元指数", C.dxy)],
+                             hidden: $hiddenPD)
+                MultiLineCanvas(
+                    left: hiddenPD.contains("金价") ? [] :
+                        [CanvasSeries(name: "金价", color: C.gold, points: price)],
+                    right: hiddenPD.contains("美元指数") ? [] :
+                        [CanvasSeries(name: "美元指数", color: C.dxy, points: dxy)],
+                    height: 188)
             }
         }
     }
@@ -199,37 +199,32 @@ struct DashboardView: View {
     // MARK: 图6: 黄金期权 PCR
 
     private var pcrPanel: some View {
-        Panel(title: "黄金期权 PCR (看跌/看涨)", height: 180) {
-            Chart {
-                ForEach(store.cot.pcr.shfe) { p in
-                    if let v = p.vol {
-                        LineMark(x: .value("日期", p.date), y: .value("PCR", v))
-                            .foregroundStyle(C.mm)
-                    }
-                    LineMark(x: .value("日期", p.date), y: .value("PCR", p.oi))
-                        .foregroundStyle(C.gold)
-                        .lineStyle(StrokeStyle(dash: [4, 3]))
-                }
-                ForEach(store.cot.pcr.gld) { p in
-                    LineMark(x: .value("日期", p.date), y: .value("PCR", p.value))
-                        .foregroundStyle(C.gldPcr)
-                }
-                RuleMark(y: .value("基准", 1.0))
-                    .foregroundStyle(.gray).lineStyle(StrokeStyle(dash: [4, 3]))
+        let shfe = downsample(store.cot.pcr.shfe.filter { window.contains($0.date) })
+        let gld = downsample(store.cot.pcr.gld.filter { window.contains($0.date) })
+            .map { ($0.date, $0.value) }
+        var arr: [CanvasSeries] = []
+        if !hiddenPCR.contains("沪金成交量 PCR") {
+            let pts = shfe.compactMap { p -> (Date, Double)? in
+                guard let v = p.vol else { return nil }
+                return (p.date, v)
             }
-            .chartXAxis {
-                AxisMarks { AxisValueLabel().foregroundStyle(C.axis) }
+            arr.append(CanvasSeries(name: "沪金成交量 PCR", color: C.mm, points: pts))
+        }
+        if !hiddenPCR.contains("沪金持仓量 PCR") {
+            arr.append(CanvasSeries(name: "沪金持仓量 PCR", color: C.gold, dashed: true,
+                                    points: shfe.map { ($0.date, $0.oi) }))
+        }
+        if !hiddenPCR.contains("美国 GLD PCR") {
+            arr.append(CanvasSeries(name: "美国 GLD PCR", color: C.gldPcr, points: gld))
+        }
+        return Panel(title: "黄金期权 PCR (看跌/看涨)", height: 200) {
+            VStack(spacing: 4) {
+                LegendToggle(items: [("沪金成交量 PCR", C.mm),
+                                     ("沪金持仓量 PCR", C.gold),
+                                     ("美国 GLD PCR", C.gldPcr)],
+                             hidden: $hiddenPCR)
+                MultiLineCanvas(left: arr, hLine: (1.0, "1.0"), height: 158)
             }
-            .chartYAxis {
-                AxisMarks(position: .leading) {
-                    AxisGridLine().foregroundStyle(Color(.systemGray5))
-                    AxisValueLabel().foregroundStyle(C.axis)
-                }
-            }
-            .chartForegroundStyleScale([
-                "沪金期权成交量 PCR": C.mm, "沪金期权持仓量 PCR": C.gold,
-                "美国 GLD 期权 PCR": C.gldPcr,
-            ])
         }
     }
 }
