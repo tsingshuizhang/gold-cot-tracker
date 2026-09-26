@@ -67,19 +67,14 @@ struct RangeSlider: View {
     @Binding var range: ClosedRange<Double>
     private let minSpan = 0.05
     private let thumb: CGFloat = 20
-    private let pad: CGFloat = 44   // 触摸热区 (苹果建议最小 44pt)
+    private let pad: CGFloat = 44   // 滑轨行高 (整行可拖)
     private let commitInterval = 0.06   // 图表更新节流: 拖动中最多 ~17次/秒, 保证跟手
 
     // 拖动中的实时位置 (只驱动滑块显示, 不等图表), nil = 未拖动
     @State private var liveLo: Double?
     @State private var liveHi: Double?
+    @State private var active: Int?          // 0=左滑块 1=右滑块 (触摸起始点较近的一侧)
     @State private var lastCommit = Date.distantPast
-
-    /// 热区中心与滑块圆心重合: 手指全局 x = 圆心x + (局部x - pad/2), 再归一化到 [0,1]
-    private func norm(_ locX: CGFloat, _ center: CGFloat, _ w: CGFloat) -> Double {
-        let g = center + locX - pad / 2
-        return Double(min(max(g - thumb / 2, 0), w - thumb) / (w - thumb))
-    }
 
     var body: some View {
         GeometryReader { geo in
@@ -91,61 +86,63 @@ struct RangeSlider: View {
             let hi = CGFloat(curHi) * (w - thumb) + thumb / 2
             ZStack {
                 Capsule().fill(Color(.systemGray5)).frame(height: 5)
-                Capsule().fill(C.gold).frame(width: max(hi - lo, 0), height: 5)
-                // 左滑块: 视觉 20pt, 热区 44pt
+                // 金色选中段: 显式定位在两滑块之间 (ZStack默认居中会导致脱节)
+                Capsule().fill(C.gold)
+                    .frame(width: max(hi - lo, 0), height: 5)
+                    .position(x: (lo + hi) / 2, y: geo.size.height / 2)
+                // 滑块纯视觉; 手势统一挂在下方静止的滑轨上, 避免移动参考系导致定位漂移
                 Circle().fill(.white).shadow(color: .black.opacity(0.25), radius: 1.5)
                     .frame(width: thumb, height: thumb)
-                    .frame(width: pad, height: pad)
-                    .contentShape(Rectangle())
                     .position(x: lo, y: geo.size.height / 2)
-                    .highPriorityGesture(DragGesture(minimumDistance: 0)
-                        .onChanged { v in
-                            let val = norm(v.location.x, lo, w)
-                            let cap = (liveHi ?? range.upperBound) - minSpan
-                            let newLo = min(max(val, 0), cap)
-                            liveLo = newLo
-                            // 节流提交给图表: 滑块永远实时, 图表最多 17 帧/秒
-                            let now = Date()
-                            if now.timeIntervalSince(lastCommit) >= commitInterval {
-                                lastCommit = now
-                                range = newLo...(liveHi ?? range.upperBound)
-                            }
-                        }
-                        .onEnded { _ in
-                            if let l = liveLo { range = l...(liveHi ?? range.upperBound) }
-                            liveLo = nil; liveHi = nil
-                            lastCommit = .distantPast
-                        })
-                // 右滑块
                 Circle().fill(.white).shadow(color: .black.opacity(0.25), radius: 1.5)
                     .frame(width: thumb, height: thumb)
-                    .frame(width: pad, height: pad)
-                    .contentShape(Rectangle())
                     .position(x: hi, y: geo.size.height / 2)
-                    .highPriorityGesture(DragGesture(minimumDistance: 0)
-                        .onChanged { v in
-                            let val = norm(v.location.x, hi, w)
-                            let floor = (liveLo ?? range.lowerBound) + minSpan
-                            let newHi = max(min(val, 1), floor)
-                            liveHi = newHi
-                            let now = Date()
-                            if now.timeIntervalSince(lastCommit) >= commitInterval {
-                                lastCommit = now
-                                range = (liveLo ?? range.lowerBound)...newHi
-                            }
-                        }
-                        .onEnded { _ in
-                            if let h = liveHi { range = (liveLo ?? range.lowerBound)...h }
-                            liveLo = nil; liveHi = nil
-                            lastCommit = .distantPast
-                        })
             }
+            // 静止参考系上的单一手势: v.location 绝对坐标, 无反馈回环
+            .contentShape(Rectangle())
+            .highPriorityGesture(DragGesture(minimumDistance: 0)
+                .onChanged { v in
+                    guard w > thumb else { return }
+                    let val = Double(min(max(v.location.x - thumb / 2, 0), w - thumb) / (w - thumb))
+                    if active == nil {
+                        // 起始触摸离哪侧近就拖哪侧
+                        active = abs(v.location.x - lo) <= abs(v.location.x - hi) ? 0 : 1
+                    }
+                    if active == 0 {
+                        let cap = (liveHi ?? range.upperBound) - minSpan
+                        let newLo = min(max(val, 0), cap)
+                        liveLo = newLo
+                        let now = Date()
+                        if now.timeIntervalSince(lastCommit) >= commitInterval {
+                            lastCommit = now
+                            range = newLo...(liveHi ?? range.upperBound)
+                        }
+                    } else {
+                        let floor = (liveLo ?? range.lowerBound) + minSpan
+                        let newHi = max(min(val, 1), floor)
+                        liveHi = newHi
+                        let now = Date()
+                        if now.timeIntervalSince(lastCommit) >= commitInterval {
+                            lastCommit = now
+                            range = (liveLo ?? range.lowerBound)...newHi
+                        }
+                    }
+                }
+                .onEnded { _ in
+                    if active == 0, let l = liveLo {
+                        range = l...(liveHi ?? range.upperBound)
+                    } else if active == 1, let h = liveHi {
+                        range = (liveLo ?? range.lowerBound)...h
+                    }
+                    active = nil; liveLo = nil; liveHi = nil
+                    lastCommit = .distantPast
+                })
         }
-        .frame(height: pad)  // 显式高度: 容纳热区且防止在 ScrollView 内无限伸展
+        .frame(height: pad)  // 显式高度: 防止在 ScrollView 内无限伸展
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
             // 双击复位: 恢复完整时间范围
-            liveLo = nil; liveHi = nil
+            liveLo = nil; liveHi = nil; active = nil
             range = 0...1
         }
         .padding(.horizontal)
