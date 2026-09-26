@@ -87,7 +87,7 @@ struct CandleChartView: View {
                         line(boll.lower, color: .blue)
 
                         // K线
-                        for (i, r) in ohlc.enumerated() {
+                        for r in ohlc {
                             let x = X(r.date)
                             let up = r.close >= r.open
                             let color: Color = up ? .red : .green

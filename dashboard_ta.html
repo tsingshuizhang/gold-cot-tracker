@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="黄金COT">
 <link rel="apple-touch-icon" href="app-icon.png">
 <title>COMEX 黄金技术分析</title>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="echarts.min.js"></script>   <!-- 本地内置, 离线/断网可用 -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* 自然流布局: 每个图形有舒适的固定高度, 超出视口时页面滚动 */
@@ -126,6 +126,11 @@ let chartData = null;     // 当前已渲染的数据
 let currentOHLC = [];     // 当前周期聚合后的 K 线 (供斐波那契按可视区间重算)
 let lastUpdated = null;   // 上次渲染的数据时间戳, 避免无变化时重复重绘
 
+if (typeof echarts === 'undefined') {
+  document.getElementById('chart').innerHTML =
+    '<div style="padding:60px 20px;text-align:center;color:#95a5a6;font-size:13px">\u56fe\u8868\u7ec4\u4ef6\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u5f3a\u5236\u5237\u65b0\u9875\u9762</div>';
+  throw new Error('echarts failed to load');
+}
 const chart = echarts.init(document.getElementById('chart'));
 
 const COLORS = {
@@ -521,7 +526,7 @@ function render(ta) {
     ],
   };
   // 保留时间滑块选中区间: 60秒自动刷新重绘时不能重置用户选的区间
-  const dzKeep = (chart.getOption().dataZoom || [])
+  const dzKeep = ((chart.getOption() || {}).dataZoom || [])
     .map(z => ({ start: z.start, end: z.end }));
   chart.setOption(option, true);
   if (dzKeep.length) {
