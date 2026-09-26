@@ -17,7 +17,7 @@ struct GoldCotTrackerApp: App {
                 NavigationStack {
                     TAView()
                 }
-                .tabItem { Label("技术分析", systemImage: "chart.candlestick.chart") }
+                .tabItem { Label("技术分析", systemImage: "chart.xyaxis.line") }
                 .tag(1)
             }
             .environmentObject(store)
