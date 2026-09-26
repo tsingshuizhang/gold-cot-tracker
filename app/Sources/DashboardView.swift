@@ -209,13 +209,36 @@ struct DashboardView: View {
 
     // MARK: 图6: 黄金期权 PCR
 
+    /// ±1σ 滚动标准差轨道 (与网页同口径): 窗口60点, 不足20点不出轨
+    private func pcrStdBands(_ pair: [(Date, Double)]) -> (up: [(Date, Double)], lo: [(Date, Double)]) {
+        var up: [(Date, Double)] = []
+        var lo: [(Date, Double)] = []
+        var win: [Double] = []
+        var sum = 0.0, sq = 0.0
+        for (d, v) in pair {
+            win.append(v); sum += v; sq += v * v
+            if win.count > 60 { let o = win.removeFirst(); sum -= o; sq -= o * o }
+            if win.count >= 20 {
+                let m = sum / Double(win.count)
+                let sd = max(0, sq / Double(win.count) - m * m).squareRoot()
+                up.append((d, m + sd)); lo.append((d, m - sd))
+            }
+        }
+        return (up, lo)
+    }
+
     private var pcrPanel: some View {
-        let shfe = downsample(store.cot.pcr.shfe.filter { window.contains($0.date) })
+        let shfe = store.cot.pcr.shfe
+        // 原始序列 (未降采样, 轨道按原始点滚动计算)
+        let volAll: [(Date, Double)] = shfe.compactMap { p in p.vol.map { (p.date, $0) } }
+        let oiAll: [(Date, Double)] = shfe.map { ($0.date, $0.oi) }
+        let gldAll: [(Date, Double)] = store.cot.pcr.gld.map { ($0.date, $0.value) }
+        let shfeDs = downsample(shfe.filter { window.contains($0.date) })
         let gld = downsample(store.cot.pcr.gld.filter { window.contains($0.date) })
             .map { ($0.date, $0.value) }
         var arr: [CanvasSeries] = []
         if !hiddenPCR.contains("沪金成交量 PCR") {
-            let pts = shfe.compactMap { p -> (Date, Double)? in
+            let pts = shfeDs.compactMap { p -> (Date, Double)? in
                 guard let v = p.vol else { return nil }
                 return (p.date, v)
             }
@@ -223,10 +246,22 @@ struct DashboardView: View {
         }
         if !hiddenPCR.contains("沪金持仓量 PCR") {
             arr.append(CanvasSeries(name: "沪金持仓量 PCR", color: C.gold, dashed: true,
-                                    points: shfe.map { ($0.date, $0.oi) }))
+                                    points: shfeDs.map { ($0.date, $0.oi) }))
         }
         if !hiddenPCR.contains("美国 GLD PCR") {
             arr.append(CanvasSeries(name: "美国 GLD PCR", color: C.gldPcr, points: gld))
+        }
+        // 三条中恰好单独显示一条时, 叠加 ±1σ 上下轨 (灰色虚线, 与网页一致)
+        let visible = [hiddenPCR.contains("沪金成交量 PCR") ? [] : volAll,
+                       hiddenPCR.contains("沪金持仓量 PCR") ? [] : oiAll,
+                       hiddenPCR.contains("美国 GLD PCR") ? [] : gldAll]
+            .filter { !$0.isEmpty }
+        if visible.count == 1 {
+            let b = pcrStdBands(visible[0])
+            arr.append(CanvasSeries(name: "±1σ 上轨", color: .gray, dashed: true,
+                                    points: downsample(b.up.filter { window.contains($0.0) })))
+            arr.append(CanvasSeries(name: "±1σ 下轨", color: .gray, dashed: true,
+                                    points: downsample(b.lo.filter { window.contains($0.0) })))
         }
         return Panel(title: "黄金期权 PCR (看跌/看涨)", height: 200) {
             VStack(spacing: 4) {
