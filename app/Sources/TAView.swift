@@ -67,7 +67,7 @@ struct TAView: View {
         let boll = Indicators.boll(closes)
         let fibs = Indicators.fibLevels(ohlc)
         return Panel(title: "K线 + 布林带(20,2) + 斐波那契回撤位", height: 320) {
-            CandleChartView(ohlc: ohlc, boll: boll, fibs: fibs)
+            CandleChartView(ohlc: ohlc, boll: boll, fibs: fibs, xDomain: window)
         }
     }
 
@@ -98,7 +98,7 @@ struct TAView: View {
                 LegendToggle(items: [("收盘价", Color.secondary)]
                              + maDefs.map { ($0.0, $0.2) },
                              hidden: $hiddenMA)
-                MultiLineCanvas(left: arr, height: 208)
+                MultiLineCanvas(left: arr, height: 208, xDomain: window)
             }
         }
     }
@@ -134,7 +134,7 @@ struct TAView: View {
                                      points: costPts),
                     ],
                     right: [CanvasSeries(name: "比值", color: .brown, points: ratioPts)],
-                    height: 198)
+                    height: 198, xDomain: window)
             }
         }
     }
@@ -155,7 +155,8 @@ struct TAView: View {
                                      ("MACD 柱", C.mm), ("金叉/死叉", .purple)],
                              hidden: $hiddenMACD)
                 MacdCanvas(dates: dates, hist: m.hist, dif: m.dif, dea: m.dea,
-                           crosses: crosses, hidden: hiddenMACD, height: 198)
+                           crosses: crosses, hidden: hiddenMACD, height: 198,
+                           xDomain: window)
             }
         }
     }

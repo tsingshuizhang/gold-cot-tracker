@@ -142,6 +142,12 @@ struct RangeSlider: View {
             }
         }
         .frame(height: pad)  // 显式高度: 容纳热区且防止在 ScrollView 内无限伸展
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            // 双击复位: 恢复完整时间范围
+            liveLo = nil; liveHi = nil
+            range = 0...1
+        }
         .padding(.horizontal)
     }
 }
@@ -237,7 +243,35 @@ func fmtAxis(_ v: Double) -> String {
     return String(format: "%.2f", v)
 }
 
-/// 多序列折线/柱状/面积图, 支持右轴双轴
+/// Y 轴刻度标签列 — 用纯 SwiftUI Text 实现 (Canvas 内逐帧解析 Text 非常慢, 是拖动卡顿主因)
+/// 数值变化时才更新文字; 位置与 Canvas 网格线对齐 (frac 0 = 底部)
+struct YAxisLabels: View {
+    let lo: Double
+    let hi: Double
+    var count: Int = 4
+    var side: HorizontalEdge = .leading   // 左轴文字右对齐, 右轴文字左对齐
+
+    var body: some View {
+        GeometryReader { geo in
+            let H = geo.size.height
+            ZStack {
+                ForEach(0..<count, id: \.self) { i in
+                    let frac = Double(i) / Double(count - 1)
+                    Text(fmtAxis(lo + (hi - lo) * frac))
+                        .font(.system(size: 9))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(width: 40, alignment: side == .leading ? .trailing : .leading)
+                        .position(x: 22, y: H * (1 - frac))
+                }
+            }
+        }
+        .frame(width: 44)
+    }
+}
+
+/// 多序列折线/柱状/面积图, 支持右轴双轴. Canvas 内只画路径, 文字全部在轴标签列.
 struct MultiLineCanvas: View {
     var left: [CanvasSeries] = []
     var right: [CanvasSeries] = []
@@ -245,99 +279,114 @@ struct MultiLineCanvas: View {
     var fillFirst: Bool = false            // 首条左轴序列面积填充
     var hLine: (value: Double, label: String)? = nil
     var height: CGFloat
+    var xDomain: ClosedRange<Date>? = nil  // 显式 X 轴域; nil = 取数据范围
+
+    /// 左轴域 (刻度标签与网格线共用)
+    private var leftDom: (lo: Double, hi: Double) {
+        var lv: [Double] = bars.map(\.1)
+        for s in left { lv += s.points.map(\.1) }
+        var lo = lv.min() ?? 0, hi = lv.max() ?? 1
+        if !bars.isEmpty || hLine != nil { lo = min(lo, 0); hi = max(hi, hLine?.value ?? 0) }
+        let pad = (hi - lo) * 0.08 + 1e-9
+        return (lo - pad, hi + pad)
+    }
+
+    private var rightDom: (lo: Double, hi: Double)? {
+        let rv = right.flatMap { $0.points.map(\.1) }
+        guard let lo0 = rv.min(), let hi0 = rv.max() else { return nil }
+        let pad = (hi0 - lo0) * 0.08 + 1e-9
+        return (lo0 - pad, hi0 + pad)
+    }
 
     var body: some View {
-        Canvas { ctx, size in
-            let padL: CGFloat = 44
-            let padR: CGFloat = right.isEmpty ? 8 : 40
-            let padT: CGFloat = 6
-            let padB: CGFloat = 6
-            let plotW = size.width - padL - padR
-            let plotH = size.height - padT - padB
-            guard plotW > 10, plotH > 10 else { return }
-            var dates: [Date] = bars.map(\.0)
-            for s in left + right { dates += s.points.map(\.0) }
-            guard let dLo = dates.min(), let dHi = dates.max(), dHi > dLo else { return }
-            let dSpan = dHi.timeIntervalSince(dLo)
-            func X(_ d: Date) -> CGFloat { padL + CGFloat(d.timeIntervalSince(dLo) / dSpan) * plotW }
-            // 左轴域
-            var lv: [Double] = bars.map(\.1)
-            for s in left { lv += s.points.map(\.1) }
-            guard var lLo = lv.min(), var lHi = lv.max() else { return }
-            if !bars.isEmpty || hLine != nil { lLo = min(lLo, 0); lHi = max(lHi, hLine?.value ?? 0) }
-            let lPad = (lHi - lLo) * 0.08 + 1e-9
-            lLo -= lPad; lHi += lPad
-            func YL(_ v: Double) -> CGFloat { padT + CGFloat(1 - (v - lLo) / (lHi - lLo)) * plotH }
-            // 网格 + 左轴标签
-            for i in 0...3 {
-                let v = lLo + (lHi - lLo) * Double(i) / 3
-                let y = YL(v)
-                var p = Path()
-                p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
-                ctx.stroke(p, with: .color(Color(.systemGray5)), style: StrokeStyle(lineWidth: 0.5))
-                ctx.draw(Text(fmtAxis(v)).font(.system(size: 9)).foregroundColor(.gray),
-                         at: CGPoint(x: padL - 4, y: y), anchor: .trailing)
-            }
-            // 柱
-            if !bars.isEmpty {
-                let bw = max(plotW / CGFloat(bars.count) * 0.6, 1)
-                for (d, v) in bars {
-                    let x = X(d)
-                    let r = CGRect(x: x - bw / 2, y: min(YL(0), YL(v)),
-                                   width: bw, height: max(abs(YL(v) - YL(0)), 1))
-                    ctx.fill(Path(r), with: .color(v >= 0 ? C.mm : C.pm))
+        let ld = leftDom
+        HStack(spacing: 0) {
+            YAxisLabels(lo: ld.lo, hi: ld.hi)
+            Canvas { ctx, size in
+                let padL: CGFloat = 4
+                let padR: CGFloat = 4
+                let padT: CGFloat = 6
+                let padB: CGFloat = 6
+                let plotW = size.width - padL - padR
+                let plotH = size.height - padT - padB
+                guard plotW > 10, plotH > 10 else { return }
+                let dLo: Date
+                let dHi: Date
+                if let xd = xDomain {
+                    dLo = xd.lowerBound; dHi = xd.upperBound
+                } else {
+                    var dates: [Date] = bars.map(\.0)
+                    for s in left + right { dates += s.points.map(\.0) }
+                    guard let a = dates.min(), let b = dates.max(), b > a else { return }
+                    dLo = a; dHi = b
                 }
-            }
-            // 面积填充 (首序列)
-            if fillFirst, let f = left.first, f.points.count > 1 {
-                var path = Path()
-                path.move(to: CGPoint(x: X(f.points[0].0), y: YL(0)))
-                for (d, v) in f.points { path.addLine(to: CGPoint(x: X(d), y: YL(v))) }
-                path.addLine(to: CGPoint(x: X(f.points.last!.0), y: YL(0)))
-                ctx.fill(path, with: .color(f.color.opacity(0.25)))
-            }
-            // 折线
-            func draw(_ s: CanvasSeries, _ Y: (Double) -> CGFloat) {
-                guard s.points.count > 1 else { return }
-                var path = Path()
-                path.move(to: CGPoint(x: X(s.points[0].0), y: Y(s.points[0].1)))
-                for (d, v) in s.points.dropFirst() { path.addLine(to: CGPoint(x: X(d), y: Y(v))) }
-                ctx.stroke(path, with: .color(s.color),
-                           style: StrokeStyle(lineWidth: 1.2, dash: s.dashed ? [4, 3] : []))
-            }
-            for s in left { draw(s, YL) }
-            // 右轴
-            if !right.isEmpty {
-                let rv = right.flatMap { $0.points.map(\.1) }
-                if let rLo0 = rv.min(), let rHi0 = rv.max() {
-                    let rPad = (rHi0 - rLo0) * 0.08 + 1e-9
-                    let rLo = rLo0 - rPad, rHi = rHi0 + rPad
-                    func YR(_ v: Double) -> CGFloat { padT + CGFloat(1 - (v - rLo) / (rHi - rLo)) * plotH }
-                    for i in 0...3 {
-                        let v = rLo + (rHi - rLo) * Double(i) / 3
-                        ctx.draw(Text(fmtAxis(v)).font(.system(size: 9)).foregroundColor(.gray),
-                                 at: CGPoint(x: padL + plotW + 4, y: YR(v)), anchor: .leading)
+                let dSpan = dHi.timeIntervalSince(dLo)
+                func X(_ d: Date) -> CGFloat { padL + CGFloat(d.timeIntervalSince(dLo) / dSpan) * plotW }
+                func YL(_ v: Double) -> CGFloat { padT + CGFloat(1 - (v - ld.lo) / (ld.hi - ld.lo)) * plotH }
+                // 网格线 (无数值文字)
+                for i in 0...3 {
+                    let v = ld.lo + (ld.hi - ld.lo) * Double(i) / 3
+                    let y = YL(v)
+                    var p = Path()
+                    p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
+                    ctx.stroke(p, with: .color(Color(.systemGray5)), style: StrokeStyle(lineWidth: 0.5))
+                }
+                // 柱
+                if !bars.isEmpty {
+                    let bw = max(plotW / CGFloat(bars.count) * 0.6, 1)
+                    for (d, v) in bars {
+                        let x = X(d)
+                        let r = CGRect(x: x - bw / 2, y: min(YL(0), YL(v)),
+                                       width: bw, height: max(abs(YL(v) - YL(0)), 1))
+                        ctx.fill(Path(r), with: .color(v >= 0 ? C.mm : C.pm))
                     }
-                    for s in right { draw(s, YR) }
+                }
+                // 面积填充 (首序列)
+                if fillFirst, let f = left.first, f.points.count > 1 {
+                    var path = Path()
+                    path.move(to: CGPoint(x: X(f.points[0].0), y: YL(0)))
+                    for (d, v) in f.points { path.addLine(to: CGPoint(x: X(d), y: YL(v))) }
+                    path.addLine(to: CGPoint(x: X(f.points.last!.0), y: YL(0)))
+                    ctx.fill(path, with: .color(f.color.opacity(0.25)))
+                }
+                // 折线
+                func draw(_ s: CanvasSeries, _ Y: (Double) -> CGFloat) {
+                    guard s.points.count > 1 else { return }
+                    var path = Path()
+                    path.move(to: CGPoint(x: X(s.points[0].0), y: Y(s.points[0].1)))
+                    for (d, v) in s.points.dropFirst() { path.addLine(to: CGPoint(x: X(d), y: Y(v))) }
+                    ctx.stroke(path, with: .color(s.color),
+                               style: StrokeStyle(lineWidth: 1.2, dash: s.dashed ? [4, 3] : []))
+                }
+                for s in left { draw(s, YL) }
+                // 右轴
+                if let rd = rightDom {
+                    let rv = right.flatMap { $0.points.map(\.1) }
+                    if !rv.isEmpty {
+                        func YR(_ v: Double) -> CGFloat { padT + CGFloat(1 - (v - rd.lo) / (rd.hi - rd.lo)) * plotH }
+                        for s in right { draw(s, YR) }
+                    }
+                }
+                // 基准线 (仅一条文字, 量小留在 Canvas 内)
+                if let hl = hLine {
+                    let y = YL(hl.value)
+                    var p = Path()
+                    p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
+                    ctx.stroke(p, with: .color(.gray.opacity(0.6)),
+                               style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
+                    ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.gray),
+                             at: CGPoint(x: padL + plotW - 2, y: y), anchor: .trailing)
                 }
             }
-            // 基准线
-            if let hl = hLine {
-                let y = YL(hl.value)
-                var p = Path()
-                p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
-                ctx.stroke(p, with: .color(.gray.opacity(0.6)),
-                           style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
-                ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.gray),
-                         at: CGPoint(x: padL + plotW - 2, y: y), anchor: .trailing)
+            .frame(height: height)
+            if let rd = rightDom {
+                YAxisLabels(lo: rd.lo, hi: rd.hi, side: .trailing)
             }
         }
-        .frame(height: height)
-        .drawingGroup()   // Metal 加速: 绘制移到 GPU, 大幅减轻主线程负担
     }
 }
 
-/// MACD 专用 Canvas (柱 + DIF/DEA + 金叉死叉标注)
+/// MACD 专用 Canvas (柱 + DIF/DEA + 金叉死叉标注); 文字标签仅限最近10个, 其余只画圆点
 struct MacdCanvas: View {
     var dates: [Date]
     var hist: [Double]
@@ -346,69 +395,81 @@ struct MacdCanvas: View {
     var crosses: [(date: Date, value: Double, kind: String)]
     var hidden: Set<String>
     var height: CGFloat
+    var xDomain: ClosedRange<Date>? = nil
+
+    private var dom: (lo: Double, hi: Double) {
+        var lv = hist + dif + dea
+        lv.append(0)
+        let lo0 = lv.min() ?? 0, hi0 = lv.max() ?? 1
+        let pad = (hi0 - lo0) * 0.1 + 1e-9
+        return (lo0 - pad, hi0 + pad)
+    }
 
     var body: some View {
-        Canvas { ctx, size in
-            let padL: CGFloat = 44
-            let padR: CGFloat = 8
-            let padT: CGFloat = 14
-            let padB: CGFloat = 6
-            let plotW = size.width - padL - padR
-            let plotH = size.height - padT - padB
-            guard plotW > 10, plotH > 10, dates.count > 1 else { return }
-            let dLo = dates.first!, dHi = dates.last!
-            let dSpan = dHi.timeIntervalSince(dLo)
-            func X(_ i: Int) -> CGFloat { padL + CGFloat(dates[i].timeIntervalSince(dLo) / dSpan) * plotW }
-            var lv = hist + dif + dea
-            lv.append(0)
-            guard var lLo = lv.min(), var lHi = lv.max() else { return }
-            let lPad = (lHi - lLo) * 0.1 + 1e-9
-            lLo -= lPad; lHi += lPad
-            func Y(_ v: Double) -> CGFloat { padT + CGFloat(1 - (v - lLo) / (lHi - lLo)) * plotH }
-            for i in 0...2 {
-                let v = lLo + (lHi - lLo) * Double(i) / 2
-                let y = Y(v)
-                var p = Path()
-                p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
-                ctx.stroke(p, with: .color(Color(.systemGray5)), style: StrokeStyle(lineWidth: 0.5))
-                ctx.draw(Text(fmtAxis(v)).font(.system(size: 9)).foregroundColor(.gray),
-                         at: CGPoint(x: padL - 4, y: y), anchor: .trailing)
-            }
-            // 柱
-            if !hidden.contains("MACD 柱") {
-                let bw = max(plotW / CGFloat(hist.count) * 0.5, 1)
-                for (i, v) in hist.enumerated() {
-                    let r = CGRect(x: X(i) - bw / 2, y: min(Y(0), Y(v)),
-                                   width: bw, height: max(abs(Y(v) - Y(0)), 1))
-                    ctx.fill(Path(r), with: .color((v >= 0 ? C.mm : C.pm).opacity(0.5)))
+        let d = dom
+        HStack(spacing: 0) {
+            YAxisLabels(lo: d.lo, hi: d.hi, count: 3)
+            Canvas { ctx, size in
+                let padL: CGFloat = 4
+                let padR: CGFloat = 4
+                let padT: CGFloat = 14
+                let padB: CGFloat = 6
+                let plotW = size.width - padL - padR
+                let plotH = size.height - padT - padB
+                guard plotW > 10, plotH > 10, !dates.isEmpty else { return }
+                let dLo = xDomain?.lowerBound ?? dates.first!
+                let dHi = xDomain?.upperBound ?? dates.last!
+                guard dHi > dLo else { return }
+                let dSpan = dHi.timeIntervalSince(dLo)
+                func X(_ dte: Date) -> CGFloat { padL + CGFloat(dte.timeIntervalSince(dLo) / dSpan) * plotW }
+                func Y(_ v: Double) -> CGFloat { padT + CGFloat(1 - (v - d.lo) / (d.hi - d.lo)) * plotH }
+                // 网格线 (无数值文字)
+                for i in 0...2 {
+                    let v = d.lo + (d.hi - d.lo) * Double(i) / 2
+                    let y = Y(v)
+                    var p = Path()
+                    p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
+                    ctx.stroke(p, with: .color(Color(.systemGray5)), style: StrokeStyle(lineWidth: 0.5))
+                }
+                // 柱
+                if !hidden.contains("MACD 柱") {
+                    let bw = max(plotW / CGFloat(max(hist.count, 1)) * 0.5, 1)
+                    for (i, v) in hist.enumerated() {
+                        guard i < dates.count else { break }
+                        let r = CGRect(x: X(dates[i]) - bw / 2, y: min(Y(0), Y(v)),
+                                       width: bw, height: max(abs(Y(v) - Y(0)), 1))
+                        ctx.fill(Path(r), with: .color((v >= 0 ? C.mm : C.pm).opacity(0.5)))
+                    }
+                }
+                // DIF / DEA
+                func line(_ vals: [Double], _ color: Color) {
+                    var path = Path()
+                    for (i, v) in vals.enumerated() {
+                        guard i < dates.count else { break }
+                        let pt = CGPoint(x: X(dates[i]), y: Y(v))
+                        if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
+                    }
+                    ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 1.2))
+                }
+                if !hidden.contains("DIF") { line(dif, .red) }
+                if !hidden.contains("DEA") { line(dea, .blue) }
+                // 金叉/死叉: 全部画圆点; 文字只标最近10个 (Canvas内Text很慢)
+                if !hidden.contains("金叉/死叉") {
+                    for c in crosses {
+                        let pt = CGPoint(x: X(c.date), y: Y(c.value))
+                        let dd = CGRect(x: pt.x - 3.5, y: pt.y - 3.5, width: 7, height: 7)
+                        ctx.fill(Path(dd), with: .color(c.kind == "金叉" ? C.mm : C.pm))
+                    }
+                    for c in crosses.suffix(10) {
+                        let pt = CGPoint(x: X(c.date), y: Y(c.value))
+                        ctx.draw(Text(c.kind).font(.system(size: 8))
+                                    .foregroundColor(c.kind == "金叉" ? C.mm : C.pm),
+                                 at: CGPoint(x: pt.x, y: pt.y - 10))
+                    }
                 }
             }
-            // DIF / DEA
-            func line(_ vals: [Double], _ color: Color) {
-                var path = Path()
-                for (i, v) in vals.enumerated() {
-                    let pt = CGPoint(x: X(i), y: Y(v))
-                    if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
-                }
-                ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 1.2))
-            }
-            if !hidden.contains("DIF") { line(dif, .red) }
-            if !hidden.contains("DEA") { line(dea, .blue) }
-            // 金叉/死叉
-            if !hidden.contains("金叉/死叉") {
-                for c in crosses {
-                    let pt = CGPoint(x: padL + CGFloat(c.date.timeIntervalSince(dLo) / dSpan) * plotW,
-                                     y: Y(c.value))
-                    let d = CGRect(x: pt.x - 3.5, y: pt.y - 3.5, width: 7, height: 7)
-                    ctx.fill(Path(d), with: .color(c.kind == "金叉" ? C.mm : C.pm))
-                    ctx.draw(Text(c.kind).font(.system(size: 8))
-                                .foregroundColor(c.kind == "金叉" ? C.mm : C.pm),
-                             at: CGPoint(x: pt.x, y: pt.y - 10))
-                }
-            }
+            .frame(height: height)
         }
-        .frame(height: height)
-        .drawingGroup()   // Metal 加速
     }
 }
 
