@@ -35,6 +35,8 @@ enum Indicators {
     }
 
     static func macd(_ closes: [Double], maxCross: Int = 60) -> Macd {
+        // 空数组时 1..<0 非法区间会崩溃, 提前返回
+        guard !closes.isEmpty else { return Macd(dif: [], dea: [], hist: [], crosses: []) }
         let ema12 = ema(closes, 12)
         let ema26 = ema(closes, 26)
         let dif = zip(ema12, ema26).map(-)
@@ -64,6 +66,8 @@ enum Indicators {
     static func boll(_ closes: [Double], n: Int = 20, mult: Double = 2) -> Boll {
         var mid = [Double?](repeating: nil, count: closes.count)
         var upper = mid, lower = mid
+        // 数据不足 n 根时返回空指标, 防止 19..<5 这类非法区间崩溃
+        guard closes.count >= n else { return Boll(mid: mid, upper: upper, lower: lower) }
         for i in n - 1..<closes.count {
             let win = closes[i - n + 1...i]
             let m = win.reduce(0, +) / Double(n)
