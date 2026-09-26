@@ -40,19 +40,30 @@ final class DataStore: ObservableObject {
         return out
     }
 
-    // MARK: 抓取
+    // MARK: 抓取 (先读本地缓存立即显示, 再联网刷新)
 
     func refresh() async {
+        loadCache()
         loading = true
         errorMessage = nil
         dbg.log("refresh start")
         // 两个数据源互相独立: 一个失败不影响另一个
-        do { self.cot = try await fetchCot(); dbg.log("cot ok: \(self.cot.cot.count)") }
+        do {
+            let data = try await Self.get("\(Self.base)/data/cot_data.json")
+            self.cot = try parseCot(data)
+            saveCache(data, name: "cot_data.json")
+            dbg.log("cot ok: \(self.cot.cot.count)")
+        }
         catch {
             dbg.log("cot fail: \(error.localizedDescription)")
             errorMessage = "持仓数据加载失败: \(error.localizedDescription)"
         }
-        do { self.ta = try await fetchTa(); dbg.log("ta ok: \(self.ta.ohlc.count)") }
+        do {
+            let data = try await Self.get("\(Self.base)/data/ta_data.js")
+            self.ta = try parseTa(data)
+            saveCache(data, name: "ta_data.js")
+            dbg.log("ta ok: \(self.ta.ohlc.count)")
+        }
         catch {
             dbg.log("ta fail: \(error.localizedDescription)")
             if errorMessage == nil {
@@ -63,8 +74,33 @@ final class DataStore: ObservableObject {
         dbg.log("refresh done")
     }
 
-    private func fetchCot() async throws -> CotPayload {
-        let data = try await Self.get("\(Self.base)/data/cot_data.json")
+    // MARK: 本地缓存
+
+    private static func cacheURL(_ name: String) -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(name)
+    }
+
+    /// 启动/刷新时先读磁盘缓存, 页面立即有数据, 无需等待网络
+    private func loadCache() {
+        if let d = try? Data(contentsOf: Self.cacheURL("cot_data.json")),
+           let p = try? parseCot(d), !p.cot.isEmpty {
+            cot = p
+            dbg.log("cot cache: \(p.cot.count)")
+        }
+        if let d = try? Data(contentsOf: Self.cacheURL("ta_data.js")),
+           let p = try? parseTa(d), !p.ohlc.isEmpty {
+            ta = p
+            dbg.log("ta cache: \(p.ohlc.count)")
+        }
+    }
+
+    private func saveCache(_ data: Data, name: String) {
+        do { try data.write(to: Self.cacheURL(name), options: .atomic) }
+        catch { dbg.log("cache save fail \(name): \(error.localizedDescription)") }
+    }
+
+    private func parseCot(_ data: Data) throws -> CotPayload {
         let raw = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
 
         var p = CotPayload()
@@ -98,9 +134,9 @@ final class DataStore: ObservableObject {
         return p
     }
 
-    private func fetchTa() async throws -> TaPayload {
+    private func parseTa(_ data: Data) throws -> TaPayload {
         // ta_data.js 内容形如: window.TA_DATA = {...};
-        var data = try await Self.get("\(Self.base)/data/ta_data.js")
+        var data = data
         var text = String(decoding: data, as: UTF8.self)
         if let range = text.range(of: "=") {
             text = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
