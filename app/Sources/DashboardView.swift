@@ -12,18 +12,26 @@ struct DashboardView: View {
     @State private var hiddenPD: Set<String> = []
     @State private var hiddenPCR: Set<String> = []
 
-    var series: [CotRecord] { store.cotSeries(dim: dim) }
+    // 重计算结果缓存: 只在数据/维度变化时重算, 拖动滑块每帧不再重复排序+遍历上万日期
+    @State private var seriesCache: [CotRecord] = []
+    @State private var domainCache: ClosedRange<Date> = Date()...Date()
+
+    var series: [CotRecord] { seriesCache }
 
     /// 全页统一时间域 (所有序列日期最小~最大)
-    private var domain: ClosedRange<Date> {
+    private var domain: ClosedRange<Date> { domainCache }
+
+    private func recomputeBase() {
+        let s = store.cotSeries(dim: dim)
+        seriesCache = s
         var lo = Date.distantFuture, hi = Date.distantPast
-        for d in series.map(\.date) + store.cot.price.map(\.date)
+        for d in s.map(\.date) + store.cot.price.map(\.date)
                 + store.cot.dxy.map(\.date)
                 + store.cot.pcr.shfe.map(\.date)
                 + store.cot.pcr.gld.map(\.date) {
             lo = min(lo, d); hi = max(hi, d)
         }
-        return lo...hi
+        if hi > lo { domainCache = lo...hi }
     }
 
     private var window: ClosedRange<Date> { Date().window(range, in: domain) }
@@ -58,6 +66,9 @@ struct DashboardView: View {
         }
         .navigationTitle("黄金 CFTC COT 持仓看板")
         .refreshable { await store.refresh() }
+        .onAppear { if seriesCache.isEmpty { recomputeBase() } }
+        .onChange(of: dim) { _, _ in recomputeBase() }
+        .onChange(of: store.cot.updated) { _, _ in recomputeBase() }
     }
 
     // MARK: 顶部指标卡片
@@ -110,7 +121,7 @@ struct DashboardView: View {
                     right: hiddenNet.contains("金价") ? [] :
                         [CanvasSeries(name: "金价", color: C.gold, points: price)],
                     bars: hiddenNet.contains("净持仓") ? [] : bars,
-                    height: 168)
+                    height: 168, xDomain: window)
             }
         }
     }
@@ -139,7 +150,7 @@ struct DashboardView: View {
         return Panel(title: "各类交易者净持仓对比", height: 200) {
             VStack(spacing: 4) {
                 LegendToggle(items: catDefs, hidden: $hiddenCat)
-                MultiLineCanvas(left: seriesArr, height: 158)
+                MultiLineCanvas(left: seriesArr, height: 158, xDomain: window)
             }
         }
     }
@@ -158,7 +169,7 @@ struct DashboardView: View {
         return Panel(title: "管理基金多空分项", height: 200) {
             VStack(spacing: 4) {
                 LegendToggle(items: [("多头", C.mm), ("空头", C.pm)], hidden: $hiddenLS)
-                MultiLineCanvas(left: arr, height: 158)
+                MultiLineCanvas(left: arr, height: 158, xDomain: window)
             }
         }
     }
@@ -171,7 +182,7 @@ struct DashboardView: View {
             MultiLineCanvas(
                 left: [CanvasSeries(name: "OI", color: C.swap,
                                     points: recs.map { ($0.date, $0.oi) })],
-                fillFirst: true, height: 128)
+                fillFirst: true, height: 128, xDomain: window)
         }
     }
 
@@ -191,7 +202,7 @@ struct DashboardView: View {
                         [CanvasSeries(name: "金价", color: C.gold, points: price)],
                     right: hiddenPD.contains("美元指数") ? [] :
                         [CanvasSeries(name: "美元指数", color: C.dxy, points: dxy)],
-                    height: 188)
+                    height: 188, xDomain: window)
             }
         }
     }
@@ -223,7 +234,7 @@ struct DashboardView: View {
                                      ("沪金持仓量 PCR", C.gold),
                                      ("美国 GLD PCR", C.gldPcr)],
                              hidden: $hiddenPCR)
-                MultiLineCanvas(left: arr, hLine: (1.0, "1.0"), height: 158)
+                MultiLineCanvas(left: arr, hLine: (1.0, "1.0"), height: 158, xDomain: window)
             }
         }
     }
