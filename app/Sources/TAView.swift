@@ -80,7 +80,7 @@ struct TAView: View {
 
     private let maDefs: [(String, Int, Color)] = [
         ("MA5", 5, .red), ("MA10", 10, .orange), ("MA20", 20, .blue),
-        ("MA60", 60, .green), ("MA120", 120, .purple), ("MA250", 250, .gray),
+        ("MA60", 60, .green), ("MA120", 120, .purple), ("MA250", 250, .secondary),
     ]
 
     private var maPanel: some View {

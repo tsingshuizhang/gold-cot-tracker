@@ -105,7 +105,7 @@ struct CandleChartView: View {
                         if inspecting, let px = press?.x {
                             var cp = Path()
                             cp.move(to: CGPoint(x: px, y: 0)); cp.addLine(to: CGPoint(x: px, y: size.height))
-                            ctx.stroke(cp, with: .color(.gray.opacity(0.6)),
+                            ctx.stroke(cp, with: .color(.secondary.opacity(0.8)),
                                        style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
                             let cd = xLo.addingTimeInterval(Double(px - padL) / Double(plotW) * xHi.timeIntervalSince(xLo))
                             if let r = nearest(ohlc.map { ($0.date, $0.close) }, to: cd) {

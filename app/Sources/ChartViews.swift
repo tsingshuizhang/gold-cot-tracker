@@ -12,7 +12,7 @@ enum C {
     static let gold = Color(hex: 0xf39c12)
     static let dxy = Color(hex: 0x16a085)
     static let gldPcr = Color(hex: 0x27ae60)
-    static let panelBg = Color(hex: 0xffffff)
+    static let panelBg = Color(.systemBackground)   // 跟随系统深浅色
     static let axis = Color(hex: 0x8a94a6)
 }
 
@@ -48,7 +48,7 @@ struct Panel<Content: View>: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 0.5)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
                 )
         }
         .padding(.horizontal)
@@ -98,7 +98,7 @@ struct RangeSlider: View {
             let lo = CGFloat(curLo) * (w - thumb) + thumb / 2
             let hi = CGFloat(curHi) * (w - thumb) + thumb / 2
             ZStack {
-                Capsule().fill(Color(.systemGray5)).frame(height: 5)
+                Capsule().fill(Color(.systemGray4)).frame(height: 5)
                 // 金色选中段: 显式定位在两滑块之间 (ZStack默认居中会导致脱节)
                 Capsule().fill(C.gold)
                     .frame(width: max(hi - lo, 0), height: 5)
@@ -269,7 +269,7 @@ struct YAxisLabels: View {
                     let frac = Double(i) / Double(count - 1)
                     Text(fmtAxis(lo + (hi - lo) * frac))
                         .font(.system(size: 9))
-                        .foregroundColor(.gray)
+                        .foregroundColor(.secondary)
                         .lineLimit(1)
                         .fixedSize()
                         .frame(width: 40, alignment: side == .leading ? .trailing : .leading)
@@ -405,7 +405,7 @@ struct MultiLineCanvas: View {
                             let y = YL(v)
                             var p = Path()
                             p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
-                            ctx.stroke(p, with: .color(Color(.systemGray5)), style: StrokeStyle(lineWidth: 0.5))
+                            ctx.stroke(p, with: .color(Color.primary.opacity(0.10)), style: StrokeStyle(lineWidth: 0.5))
                         }
                         // 柱
                         if !bars.isEmpty {
@@ -448,16 +448,16 @@ struct MultiLineCanvas: View {
                             let y = YL(hl.value)
                             var p = Path()
                             p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
-                            ctx.stroke(p, with: .color(.gray.opacity(0.6)),
+                            ctx.stroke(p, with: .color(.secondary.opacity(0.8)),
                                        style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
-                            ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.gray),
+                            ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.secondary),
                                      at: CGPoint(x: padL + plotW - 2, y: y), anchor: .trailing)
                         }
                         // 十字光标: 竖线 + 各序列圆点
                         if inspecting, let px = press?.x {
                             var cp = Path()
                             cp.move(to: CGPoint(x: px, y: padT)); cp.addLine(to: CGPoint(x: px, y: padT + plotH))
-                            ctx.stroke(cp, with: .color(.gray.opacity(0.6)),
+                            ctx.stroke(cp, with: .color(.secondary.opacity(0.8)),
                                        style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
                             let cd = dLo.addingTimeInterval(Double(px - padL) / Double(plotW) * dSpan)
                             for s in left {
@@ -587,7 +587,7 @@ struct MacdCanvas: View {
                             let y = Y(v)
                             var p = Path()
                             p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
-                            ctx.stroke(p, with: .color(Color(.systemGray5)), style: StrokeStyle(lineWidth: 0.5))
+                            ctx.stroke(p, with: .color(Color.primary.opacity(0.10)), style: StrokeStyle(lineWidth: 0.5))
                         }
                         // 柱
                         if !hidden.contains("MACD 柱") {
@@ -629,7 +629,7 @@ struct MacdCanvas: View {
                         if inspecting, let px = press?.x {
                             var cp = Path()
                             cp.move(to: CGPoint(x: px, y: padT)); cp.addLine(to: CGPoint(x: px, y: padT + plotH))
-                            ctx.stroke(cp, with: .color(.gray.opacity(0.6)),
+                            ctx.stroke(cp, with: .color(.secondary.opacity(0.8)),
                                        style: StrokeStyle(lineWidth: 0.7, dash: [3, 3]))
                             let cd = dLo.addingTimeInterval(Double(px - padL) / Double(plotW) * dSpan)
                             if let i = nearestIndex(dates, to: cd) {

@@ -103,7 +103,7 @@ struct DashboardView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(.white)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.systemBackground))
                     .shadow(color: .black.opacity(0.06), radius: 2, y: 1))
             }
         }
@@ -264,9 +264,9 @@ struct DashboardView: View {
             .filter { !$0.isEmpty }
         if visible.count == 1 {
             let b = pcrStdBands(visible[0])
-            arr.append(CanvasSeries(name: "±1σ 上轨", color: .gray, dashed: true,
+            arr.append(CanvasSeries(name: "±1σ 上轨", color: .secondary, dashed: true,
                                     points: downsample(b.up.filter { window.contains($0.0) })))
-            arr.append(CanvasSeries(name: "±1σ 下轨", color: .gray, dashed: true,
+            arr.append(CanvasSeries(name: "±1σ 下轨", color: .secondary, dashed: true,
                                     points: downsample(b.lo.filter { window.contains($0.0) })))
         }
         return Panel(title: "黄金期权 PCR (看跌/看涨)", height: 200) {
