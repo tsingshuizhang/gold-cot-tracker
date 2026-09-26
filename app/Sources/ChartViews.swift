@@ -68,6 +68,12 @@ struct RangeSlider: View {
     private let minSpan = 0.05
     private let thumb: CGFloat = 20
     private let pad: CGFloat = 44   // 触摸热区 (苹果建议最小 44pt)
+    private let commitInterval = 0.06   // 图表更新节流: 拖动中最多 ~17次/秒, 保证跟手
+
+    // 拖动中的实时位置 (只驱动滑块显示, 不等图表), nil = 未拖动
+    @State private var liveLo: Double?
+    @State private var liveHi: Double?
+    @State private var lastCommit = Date.distantPast
 
     /// 热区中心与滑块圆心重合: 手指全局 x = 圆心x + (局部x - pad/2), 再归一化到 [0,1]
     private func norm(_ locX: CGFloat, _ center: CGFloat, _ w: CGFloat) -> Double {
@@ -78,10 +84,11 @@ struct RangeSlider: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            // 注意: GeometryReader 在 ScrollView 内会被提供无限高度,
-            // 必须显式限制 frame, 否则它会铺满整页吞掉所有触摸
-            let lo = CGFloat(range.lowerBound) * (w - thumb) + thumb / 2
-            let hi = CGFloat(range.upperBound) * (w - thumb) + thumb / 2
+            // 滑块位置优先用拖动中的实时值, 图表绑定(range)节流更新
+            let curLo = liveLo ?? range.lowerBound
+            let curHi = liveHi ?? range.upperBound
+            let lo = CGFloat(curLo) * (w - thumb) + thumb / 2
+            let hi = CGFloat(curHi) * (w - thumb) + thumb / 2
             ZStack {
                 Capsule().fill(Color(.systemGray5)).frame(height: 5)
                 Capsule().fill(C.gold).frame(width: max(hi - lo, 0), height: 5)
@@ -91,20 +98,47 @@ struct RangeSlider: View {
                     .frame(width: pad, height: pad)
                     .contentShape(Rectangle())
                     .position(x: lo, y: geo.size.height / 2)
-                    .highPriorityGesture(DragGesture(minimumDistance: 0).onChanged { v in
-                        let newLo = min(max(norm(v.location.x, lo, w), 0), range.upperBound - minSpan)
-                        range = newLo...range.upperBound
-                    })
+                    .highPriorityGesture(DragGesture(minimumDistance: 0)
+                        .onChanged { v in
+                            let val = norm(v.location.x, lo, w)
+                            let cap = (liveHi ?? range.upperBound) - minSpan
+                            let newLo = min(max(val, 0), cap)
+                            liveLo = newLo
+                            // 节流提交给图表: 滑块永远实时, 图表最多 17 帧/秒
+                            let now = Date()
+                            if now.timeIntervalSince(lastCommit) >= commitInterval {
+                                lastCommit = now
+                                range = newLo...(liveHi ?? range.upperBound)
+                            }
+                        }
+                        .onEnded { _ in
+                            if let l = liveLo { range = l...(liveHi ?? range.upperBound) }
+                            liveLo = nil; liveHi = nil
+                            lastCommit = .distantPast
+                        })
                 // 右滑块
                 Circle().fill(.white).shadow(color: .black.opacity(0.25), radius: 1.5)
                     .frame(width: thumb, height: thumb)
                     .frame(width: pad, height: pad)
                     .contentShape(Rectangle())
                     .position(x: hi, y: geo.size.height / 2)
-                    .highPriorityGesture(DragGesture(minimumDistance: 0).onChanged { v in
-                        let newHi = max(min(norm(v.location.x, hi, w), 1), range.lowerBound + minSpan)
-                        range = range.lowerBound...newHi
-                    })
+                    .highPriorityGesture(DragGesture(minimumDistance: 0)
+                        .onChanged { v in
+                            let val = norm(v.location.x, hi, w)
+                            let floor = (liveLo ?? range.lowerBound) + minSpan
+                            let newHi = max(min(val, 1), floor)
+                            liveHi = newHi
+                            let now = Date()
+                            if now.timeIntervalSince(lastCommit) >= commitInterval {
+                                lastCommit = now
+                                range = (liveLo ?? range.lowerBound)...newHi
+                            }
+                        }
+                        .onEnded { _ in
+                            if let h = liveHi { range = (liveLo ?? range.lowerBound)...h }
+                            liveLo = nil; liveHi = nil
+                            lastCommit = .distantPast
+                        })
             }
         }
         .frame(height: pad)  // 显式高度: 容纳热区且防止在 ScrollView 内无限伸展
@@ -299,6 +333,7 @@ struct MultiLineCanvas: View {
             }
         }
         .frame(height: height)
+        .drawingGroup()   // Metal 加速: 绘制移到 GPU, 大幅减轻主线程负担
     }
 }
 
@@ -373,6 +408,7 @@ struct MacdCanvas: View {
             }
         }
         .frame(height: height)
+        .drawingGroup()   // Metal 加速
     }
 }
 

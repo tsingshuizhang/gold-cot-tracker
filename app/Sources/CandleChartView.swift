@@ -66,5 +66,6 @@ struct CandleChartView: View {
                 ctx.fill(Path(rect), with: .color(up ? color.opacity(0.85) : color))
             }
         }
+        .drawingGroup()   // Metal 加速: 绘制移到 GPU
     }
 }
