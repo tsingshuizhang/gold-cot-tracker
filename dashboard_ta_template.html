@@ -520,7 +520,14 @@ function render(ta) {
           data: [{ yAxis: 0 }], label: { show: false } } },
     ],
   };
+  // 保留时间滑块选中区间: 60秒自动刷新重绘时不能重置用户选的区间
+  const dzKeep = (chart.getOption().dataZoom || [])
+    .map(z => ({ start: z.start, end: z.end }));
   chart.setOption(option, true);
+  if (dzKeep.length) {
+    chart.dispatchAction(
+      { type: 'dataZoom', start: dzKeep[0].start, end: dzKeep[0].end });
+  }
   updateZoomLabel();
 }
 

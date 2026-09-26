@@ -561,7 +561,14 @@ function render() {
         itemStyle: { color: '#95a5a6' }, tooltip: { show: false } },
     ],
   };
+  // 保留时间滑块选中区间: 手机滚动触发 resize 重绘 / 数据刷新时不能重置
+  const dzKeep = (chart.getOption().dataZoom || [])
+    .map(z => ({ start: z.start, end: z.end }));
   chart.setOption(option, true);
+  if (dzKeep.length) {
+    chart.dispatchAction(
+      { type: 'dataZoom', start: dzKeep[0].start, end: dzKeep[0].end });
+  }
   // 用 action 恢复用户此前的图例开关状态:
   // 不在 option 里塞 legend.selected —— 那样会让 echarts 内部开关状态机错乱,
   // 导致重绘后下一次点击图例无法翻转。
@@ -616,7 +623,13 @@ document.getElementById('zoomReset').addEventListener('click', () => {
     b => b.classList.toggle('active', b.dataset.range === 'all'));
   render();
 });
-window.addEventListener('resize', () => { chart.resize(); render(); });
+// 手机浏览器滚动会显示/隐藏地址栏(仅高度变化), 此时只 resize 不重绘,
+// 避免重建图表重置用户选中的时间区间
+let lastWinW = window.innerWidth;
+window.addEventListener('resize', () => {
+  if (window.innerWidth !== lastWinW) { lastWinW = window.innerWidth; render(); }
+  chart.resize();
+});
 // 字体加载完成后尺寸可能再变, load 时再校正一次
 window.addEventListener('load', () => { chart.resize(); render(); });
 render();
