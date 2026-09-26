@@ -121,7 +121,7 @@ struct DashboardView: View {
                     right: hiddenNet.contains("金价") ? [] :
                         [CanvasSeries(name: "金价", color: C.gold, points: price)],
                     bars: hiddenNet.contains("净持仓") ? [] : bars,
-                    height: 168, xDomain: window)
+                    height: 168)
             }
         }
     }
@@ -150,7 +150,7 @@ struct DashboardView: View {
         return Panel(title: "各类交易者净持仓对比", height: 200) {
             VStack(spacing: 4) {
                 LegendToggle(items: catDefs, hidden: $hiddenCat)
-                MultiLineCanvas(left: seriesArr, height: 158, xDomain: window)
+                MultiLineCanvas(left: seriesArr, height: 158)
             }
         }
     }
@@ -169,7 +169,7 @@ struct DashboardView: View {
         return Panel(title: "管理基金多空分项", height: 200) {
             VStack(spacing: 4) {
                 LegendToggle(items: [("多头", C.mm), ("空头", C.pm)], hidden: $hiddenLS)
-                MultiLineCanvas(left: arr, height: 158, xDomain: window)
+                MultiLineCanvas(left: arr, height: 158)
             }
         }
     }
@@ -182,7 +182,7 @@ struct DashboardView: View {
             MultiLineCanvas(
                 left: [CanvasSeries(name: "OI", color: C.swap,
                                     points: recs.map { ($0.date, $0.oi) })],
-                fillFirst: true, height: 128, xDomain: window)
+                fillFirst: true, height: 128)
         }
     }
 
@@ -202,7 +202,7 @@ struct DashboardView: View {
                         [CanvasSeries(name: "金价", color: C.gold, points: price)],
                     right: hiddenPD.contains("美元指数") ? [] :
                         [CanvasSeries(name: "美元指数", color: C.dxy, points: dxy)],
-                    height: 188, xDomain: window)
+                    height: 188)
             }
         }
     }
@@ -234,7 +234,7 @@ struct DashboardView: View {
                                      ("沪金持仓量 PCR", C.gold),
                                      ("美国 GLD PCR", C.gldPcr)],
                              hidden: $hiddenPCR)
-                MultiLineCanvas(left: arr, hLine: (1.0, "1.0"), height: 158, xDomain: window)
+                MultiLineCanvas(left: arr, hLine: (1.0, "1.0"), height: 158)
             }
         }
     }
