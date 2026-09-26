@@ -23,6 +23,11 @@ struct TAView: View {
 
     private var window: ClosedRange<Date> { Date().window(range, in: domain) }
 
+    /// 滑块上方显示的当前选中区间
+    private var windowLabel: String {
+        "\(DateUtil.short.string(from: window.lowerBound)) ~ \(DateUtil.short.string(from: window.upperBound))"
+    }
+
     /// 当前窗口内的 K 线 (保形降采样)
     private var ohlc: [Ohlc] {
         downsampleOhlc(ohlcAll.filter { window.contains($0.date) }, max: 300)
@@ -50,7 +55,7 @@ struct TAView: View {
                 aiscPanel
                 macdPanel
 
-                RangeSlider(range: $range)
+                RangeSlider(range: $range, label: windowLabel)
             }
         }
         .navigationTitle("COMEX 黄金技术分析")

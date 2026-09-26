@@ -36,6 +36,11 @@ struct DashboardView: View {
 
     private var window: ClosedRange<Date> { Date().window(range, in: domain) }
 
+    /// 滑块上方显示的当前选中区间
+    private var windowLabel: String {
+        "\(DateUtil.short.string(from: window.lowerBound)) ~ \(DateUtil.short.string(from: window.upperBound))"
+    }
+
     var body: some View {
         ScrollView {
             if store.cot.cot.isEmpty && store.loading {
@@ -61,7 +66,7 @@ struct DashboardView: View {
                 priceDxyPanel
                 pcrPanel
 
-                RangeSlider(range: $range)
+                RangeSlider(range: $range, label: windowLabel)
             }
         }
         .navigationTitle("黄金 CFTC COT 持仓看板")
@@ -121,6 +126,7 @@ struct DashboardView: View {
                     right: hiddenNet.contains("金价") ? [] :
                         [CanvasSeries(name: "金价", color: C.gold, points: price)],
                     bars: hiddenNet.contains("净持仓") ? [] : bars,
+                    barName: "净持仓",
                     height: 168)
             }
         }
