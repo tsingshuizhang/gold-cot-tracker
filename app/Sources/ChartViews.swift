@@ -67,6 +67,13 @@ struct RangeSlider: View {
     @Binding var range: ClosedRange<Double>
     private let minSpan = 0.05
     private let thumb: CGFloat = 20
+    private let pad: CGFloat = 44   // 触摸热区 (苹果建议最小 44pt)
+
+    /// 热区中心与滑块圆心重合: 手指全局 x = 圆心x + (局部x - pad/2), 再归一化到 [0,1]
+    private func norm(_ locX: CGFloat, _ center: CGFloat, _ w: CGFloat) -> Double {
+        let g = center + locX - pad / 2
+        return Double(min(max(g - thumb / 2, 0), w - thumb) / (w - thumb))
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -78,24 +85,29 @@ struct RangeSlider: View {
             ZStack {
                 Capsule().fill(Color(.systemGray5)).frame(height: 5)
                 Capsule().fill(C.gold).frame(width: max(hi - lo, 0), height: 5)
+                // 左滑块: 视觉 20pt, 热区 44pt
                 Circle().fill(.white).shadow(color: .black.opacity(0.25), radius: 1.5)
-                    .frame(width: thumb, height: thumb).position(x: lo, y: geo.size.height / 2)
-                    .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                        let val = Double(min(max(v.location.x - thumb / 2, 0), w - thumb) / (w - thumb))
-                        let newLo = min(max(val, 0), range.upperBound - minSpan)
+                    .frame(width: thumb, height: thumb)
+                    .frame(width: pad, height: pad)
+                    .contentShape(Rectangle())
+                    .position(x: lo, y: geo.size.height / 2)
+                    .highPriorityGesture(DragGesture(minimumDistance: 0).onChanged { v in
+                        let newLo = min(max(norm(v.location.x, lo, w), 0), range.upperBound - minSpan)
                         range = newLo...range.upperBound
                     })
+                // 右滑块
                 Circle().fill(.white).shadow(color: .black.opacity(0.25), radius: 1.5)
-                    .frame(width: thumb, height: thumb).position(x: hi, y: geo.size.height / 2)
-                    .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                        let val = Double(min(max(v.location.x - thumb / 2, 0), w - thumb) / (w - thumb))
-                        let newHi = max(min(val, 1), range.lowerBound + minSpan)
+                    .frame(width: thumb, height: thumb)
+                    .frame(width: pad, height: pad)
+                    .contentShape(Rectangle())
+                    .position(x: hi, y: geo.size.height / 2)
+                    .highPriorityGesture(DragGesture(minimumDistance: 0).onChanged { v in
+                        let newHi = max(min(norm(v.location.x, hi, w), 1), range.lowerBound + minSpan)
                         range = range.lowerBound...newHi
                     })
             }
         }
-        .frame(height: 32)   // 显式高度: 防止在 ScrollView 内无限伸展
-        .clipped()
+        .frame(height: pad)  // 显式高度: 容纳热区且防止在 ScrollView 内无限伸展
         .padding(.horizontal)
     }
 }

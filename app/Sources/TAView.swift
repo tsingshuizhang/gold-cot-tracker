@@ -10,15 +10,15 @@ struct TAView: View {
     @State private var hiddenAISC: Set<String> = []
     @State private var hiddenMACD: Set<String> = []
 
-    private var ohlcAll: [Ohlc] {
-        Indicators.aggregate(store.ta.ohlc, period: period)
-    }
+    // 重计算结果缓存: 只在数据/周期变化时重算, 拖动滑块时每帧不再重复聚合
+    @State private var ohlcAll: [Ohlc] = []
+    @State private var domain: ClosedRange<Date> = Date()...Date()
 
-    /// 时间域与窗口
-    private var domain: ClosedRange<Date> {
-        let ds = ohlcAll.map(\.date) + store.cot.price.map(\.date)
-        guard let lo = ds.min(), let hi = ds.max() else { return Date()...Date() }
-        return lo...hi
+    private func recomputeBase() {
+        let agg = Indicators.aggregate(store.ta.ohlc, period: period)
+        ohlcAll = agg
+        let ds = agg.map(\.date) + store.cot.price.map(\.date)
+        if let lo = ds.min(), let hi = ds.max(), hi > lo { domain = lo...hi }
     }
 
     private var window: ClosedRange<Date> { Date().window(range, in: domain) }
@@ -55,6 +55,10 @@ struct TAView: View {
         }
         .navigationTitle("COMEX 黄金技术分析")
         .refreshable { await store.refresh() }
+        .onAppear { if ohlcAll.isEmpty { recomputeBase() } }
+        .onChange(of: period) { _, _ in recomputeBase() }
+        .onChange(of: store.ta.updated) { _, _ in recomputeBase() }
+        .onChange(of: store.cot.updated) { _, _ in recomputeBase() }
     }
 
     // MARK: 图1: K线 + 布林带 + 斐波那契 (Canvas)
