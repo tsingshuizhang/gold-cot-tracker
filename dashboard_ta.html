@@ -49,6 +49,8 @@
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
   .note-short { display: none; }
 
+  #zoomlabel { text-align: center; font-size: 11px; color: #95a5a6; margin-top: 4px; min-height: 14px; }
+
   /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
   @media (max-width: 768px), (max-height: 500px) {
     body { padding: 10px; }
@@ -57,7 +59,8 @@
     .header { gap: 10px; margin-bottom: 8px; }
     .navlink { font-size: 12px; }
     .status { margin-left: 0; width: 100%; justify-content: space-between; }
-    .btn { padding: 4px 10px; font-size: 12px; }
+    .btn { padding: 7px 12px; font-size: 12px; white-space: nowrap; }
+    .group .glabel { white-space: nowrap; }
     /* 手机端说明文字用一句话短版, 避免占用过多空间 */
     .note-long { display: none; }
     .note-short { display: block; font-size: 10px; line-height: 1.5; margin-top: 8px; }
@@ -79,6 +82,7 @@
       <button class="btn active" data-period="day">日K</button>
       <button class="btn" data-period="week">周K</button>
       <button class="btn" data-period="month">月K</button>
+      <button class="btn" id="zoomReset" title="时间范围复位">时间复位</button>
     </div>
     <div class="status">
       <span id="updated">数据加载中...</span>
@@ -87,6 +91,7 @@
   </div>
 
   <div id="chart"></div>
+  <div id="zoomlabel"></div>
   <div class="note note-long">
     本页数据独立于 COT 持仓页: 每 60 秒自动重载
     <code>data/ta_data.js</code>, 也可点"刷新数据"手动重载;
@@ -267,11 +272,29 @@ function macdMarkers(dates, closes, dif, dea) {
 }
 
 // ---------------- 渲染 ----------------
+function fmtZoomDate(t) {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 滑块上方显示当前选中区间 (与 iOS App 一致)
+function updateZoomLabel() {
+  const el = document.getElementById('zoomlabel');
+  if (!el || !currentOHLC.length) return;
+  const dz = chart.getOption().dataZoom[0];
+  const rows = currentOHLC;
+  const t0 = new Date(rows[0][0]).getTime();
+  const t1 = new Date(rows[rows.length - 1][0]).getTime();
+  const span = t1 - t0;
+  el.textContent = '选中区间  ' + fmtZoomDate(t0 + span * dz.start / 100)
+                 + ' ~ ' + fmtZoomDate(t0 + span * dz.end / 100);
+}
+
 function render(ta) {
   chartData = ta;
   const ohlc = aggregateOHLC(ta.ohlc || [], period);   // 按当前周期聚合
   currentOHLC = ohlc;
-  // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
+  // 窄屏/矮屏(手机含横屏): 图例收进面板内顶部并换短名(避免与标题重叠, 保留点按开关)
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
   const narrow = window.innerWidth < 768 || window.innerHeight < 500;
 
@@ -293,6 +316,27 @@ function render(ta) {
       y += PANEL_H[i] + gap;
     }
   }
+  // 图例构建: 桌面端在标题行右侧; 手机端(narrow)收进面板内顶部(半透明底+短名),
+  // 保留点按开关能力 — 与 iOS App 的图例胶囊一致
+  const LEGEND_SHORT = {
+    'COMEX 黄金K线': 'K线', 'BOLL 上轨': '上轨', 'BOLL 中轨': '中轨',
+    'BOLL 下轨': '下轨', '收盘价': '收盘',
+    '平均开采成本 AISC': 'AISC 成本', '金价/AISC 比值': '比值', 'MACD 柱': '柱',
+  };
+  const mkLegend = (data, i) => ({
+    data,
+    top: narrow ? layout[i].gridTop + 2 : layout[i].titleTop,
+    left: narrow ? 66 : undefined,
+    right: narrow ? 10 : 48,
+    itemWidth: narrow ? 11 : 14,
+    itemHeight: narrow ? 7 : 14,
+    itemGap: narrow ? 6 : 10,
+    textStyle: { fontSize: narrow ? 9 : 12 },
+    backgroundColor: narrow ? 'rgba(255,255,255,0.88)' : 'transparent',
+    formatter: narrow ? (name => LEGEND_SHORT[name] || name) : undefined,
+    inactiveColor: '#c8cdd5',
+  });
+
   const dates = ohlc.map(r => r[0]);
   const closes = ohlc.map(r => r[2]);
   const klineData = ohlc.map(r => [r[0], r[1], r[2], r[4], r[3]]); // x,开,收,低,高
@@ -372,14 +416,10 @@ function render(ta) {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     legend: [
-      { data: ['COMEX 黄金K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'],
-        top: layout[0].titleTop, right: 48, itemWidth: 14, show: !narrow },
-      { data: ['收盘价'].concat(maDefs.map(([n]) => 'MA' + n)),
-        top: layout[1].titleTop, right: 48, itemWidth: 14, show: !narrow },
-      { data: ['COMEX 金价', '平均开采成本 AISC', '金价/AISC 比值'],
-        top: layout[2].titleTop, right: 48, show: !narrow },
-      { data: ['DIF', 'DEA', 'MACD 柱'], top: layout[3].titleTop,
-        right: 48, show: !narrow },
+      mkLegend(['COMEX 黄金K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'], 0),
+      mkLegend(['收盘价'].concat(maDefs.map(([n]) => 'MA' + n)), 1),
+      mkLegend(['COMEX 金价', '平均开采成本 AISC', '金价/AISC 比值'], 2),
+      mkLegend(['DIF', 'DEA', 'MACD 柱'], 3),
     ],
     grid: [0, 1, 2, 3].map(i => ({
       left: 60, right: 48,
@@ -412,7 +452,8 @@ function render(ta) {
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1, 2, 3],
         minValueSpan: MIN_SPAN_MS[period] },
-      { type: 'slider', xAxisIndex: [0, 1, 2, 3], bottom: 8, height: 22,
+      { type: 'slider', xAxisIndex: [0, 1, 2, 3], bottom: 8,
+        height: narrow ? 26 : 22,
         minValueSpan: MIN_SPAN_MS[period] },
     ],
     series: [
@@ -480,7 +521,13 @@ function render(ta) {
     ],
   };
   chart.setOption(option, true);
+  updateZoomLabel();
 }
+
+// 时间复位: 恢复完整时间范围 (与 iOS App 双击滑块同功能)
+document.getElementById('zoomReset').addEventListener('click', () => {
+  chart.dispatchAction({ type: 'dataZoom', start: 0, end: 100 });
+});
 
 // 缩放时按可视区间重算斐波那契回撤位
 // 注意: 时间轴上 dataZoom 的 start/end 百分比是按"时间跨度"映射的,
@@ -494,6 +541,8 @@ chart.on('datazoom', () => {
   const span = t1 - t0;
   const vs = t0 + span * dz.start / 100;
   const ve = t0 + span * dz.end / 100;
+  const zl = document.getElementById('zoomlabel');
+  if (zl) zl.textContent = '选中区间  ' + fmtZoomDate(vs) + ' ~ ' + fmtZoomDate(ve);
   const tol = 24 * 3600 * 1000;   // 1 天容差, 覆盖边界上的交易日
   const visible = rows.filter(r => {
     const t = new Date(r[0]).getTime();

@@ -68,6 +68,8 @@
   .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
   .note-short { display: none; }
 
+  #zoomlabel { text-align: center; font-size: 11px; color: #95a5a6; margin-top: 4px; min-height: 14px; }
+
   /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
   @media (max-width: 768px), (max-height: 500px) {
     body { padding: 10px; }
@@ -79,7 +81,8 @@
     .card { min-width: calc(50% - 8px); padding: 10px 12px; }
     .card .value { font-size: 17px; }
     .toolbar { gap: 12px; padding: 10px 12px; margin-bottom: 10px; }
-    .btn { padding: 4px 10px; font-size: 12px; }
+    .btn { padding: 7px 12px; font-size: 12px; white-space: nowrap; }
+    .group .glabel { white-space: nowrap; }
     /* 手机端说明文字用一句话短版, 避免占用过多空间 */
     .note-long { display: none; }
     .note-short { display: block; font-size: 10px; line-height: 1.5; margin-top: 8px; }
@@ -120,10 +123,12 @@
       <button class="btn" data-range="3">近 3 年</button>
       <button class="btn" data-range="5">近 5 年</button>
       <button class="btn active" data-range="all">全部</button>
+      <button class="btn" id="zoomReset" title="时间滑块复位">滑块复位</button>
     </div>
   </div>
 
   <div id="chart"></div>
+  <div id="zoomlabel"></div>
   <div class="note note-long">
     交易者分类(CFTC Disaggregated 口径):
     <b>管理基金 Managed Money</b> = 机构大资金/投机主力;
@@ -160,6 +165,7 @@ const PCR = {"shfe": [["2024-03-21", 0.84, 1.719], ["2024-03-22", 1.021, 1.747],
 
 let dim = 'week';
 let range = 'all';
+let zoomTLo = Infinity, zoomTHi = -Infinity;   // 全局时间域 (区间标签用)
 // 图例选择状态 (跨重绘保持, 供 PCR 标准差轨道显隐判断)
 let legendSel = {};
 // PCR 标准差轨道: 三条 PCR 线(沪金成交量/沪金持仓量/美国GLD)恰好单独显示一条时叠加 ±1σ 轨道
@@ -282,6 +288,23 @@ function tipValue(p) {
   return fmt(p.value);
 }
 
+function fmtZoomDate(t) {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 滑块上方显示当前选中区间 (与 iOS App 一致)
+function updateZoomLabel() {
+  const el = document.getElementById('zoomlabel');
+  const dzs = chart.getOption().dataZoom || [];
+  const dz = dzs.find(z => z.type === 'slider') || dzs[0];
+  if (!el) return;
+  if (!dz || !isFinite(zoomTLo) || zoomTHi <= zoomTLo) { el.textContent = ''; return; }
+  const span = zoomTHi - zoomTLo;
+  el.textContent = '选中区间  ' + fmtZoomDate(zoomTLo + span * dz.start / 100)
+                 + ' ~ ' + fmtZoomDate(zoomTLo + span * dz.end / 100);
+}
+
 function render() {
   const data = getData();
   const toPair = key => data.map(r => [r.d, r[key]]);
@@ -307,7 +330,15 @@ function render() {
   const band = bandSrc ? pcrStdBands(bandSrc) : null;
   pcrBandOn = !!band;
 
-  // 窄屏/矮屏(手机含横屏): 隐藏图例避免与标题重叠, 序列名在触摸提示(tooltip)中查看
+  // 全局时间域 (供滑块选中区间标签显示, 百分比按时间跨度映射)
+  zoomTLo = Infinity; zoomTHi = -Infinity;
+  const eatT = t => { if (t < zoomTLo) zoomTLo = t; if (t > zoomTHi) zoomTHi = t; };
+  for (const r of data) eatT(+new Date(r.d));
+  for (const arr of [price, dxy, pcrS, pcrC]) {
+    if (arr) for (const p of arr) eatT(+new Date(p[0]));
+  }
+
+  // 窄屏/矮屏(手机含横屏): 图例收进面板内顶部并换短名(避免与标题重叠, 保留点按开关)
   // 注意用视口尺寸判断, 与 CSS 媒体查询 (max-width:768px),(max-height:500px) 保持一致
   const narrow = window.innerWidth < 768 || window.innerHeight < 500;
 
@@ -330,6 +361,31 @@ function render() {
       y += PANEL_H[i] + gap;
     }
   }
+
+  // 图例构建: 桌面端在标题行右侧; 手机端(narrow)收进面板内顶部(半透明底+短名),
+  // 保留点按开关能力 — 与 iOS App 的图例胶囊一致
+  const LEGEND_SHORT = {
+    '管理基金净持仓': '净持仓', 'COMEX 金价': '金价',
+    '管理基金(机构)': '管理基金', '生产商/贸易商(套保)': '生产商',
+    '掉期交易商': '掉期商', '其他报告(中小投机)': '其他', '散户/非报告': '散户',
+    '管理基金多头': '多头', '管理基金空头': '空头', '总持仓 OI': '总持仓',
+    '美元指数 DXY': '美元指数',
+    '沪金期权成交量 PCR': '成交量', '沪金期权持仓量 PCR': '持仓量',
+    '美国 GLD 期权 PCR': 'GLD',
+  };
+  const mkLegend = (data, i) => ({
+    data,
+    top: narrow ? layout[i].gridTop + 2 : layout[i].titleTop,
+    left: narrow ? 66 : undefined,
+    right: narrow ? 10 : 48,
+    itemWidth: narrow ? 11 : 14,
+    itemHeight: narrow ? 7 : 14,
+    itemGap: narrow ? 6 : 10,
+    textStyle: { fontSize: narrow ? 9 : 12 },
+    backgroundColor: narrow ? 'rgba(255,255,255,0.88)' : 'transparent',
+    formatter: narrow ? (name => LEGEND_SHORT[name] || name) : undefined,
+    inactiveColor: '#c8cdd5',
+  });
 
   const catLine = (name, key, color, extra = {}) => ({
     name, type: 'line', xAxisIndex: 1, yAxisIndex: 2, data: toPair(key),
@@ -369,21 +425,15 @@ function render() {
     },
     axisPointer: { link: [{ xAxisIndex: 'all' }] },
     legend: [
-      { data: ['管理基金净持仓'].concat(price ? ['COMEX 金价'] : []),
-        top: layout[0].titleTop, right: 48, show: !narrow },
-      { data: ['管理基金(机构)', '生产商/贸易商(套保)', '掉期交易商',
-               '其他报告(中小投机)', '散户/非报告'],
-        top: layout[1].titleTop, right: 48, itemWidth: 14, show: !narrow },
-      { data: ['管理基金多头', '管理基金空头'], top: layout[2].titleTop,
-        right: 48, show: !narrow },
-      { data: ['总持仓 OI'], top: layout[3].titleTop, right: 48,
-        show: !narrow },
-      { data: ['COMEX 金价', '美元指数 DXY'].filter(
-          s => (s === 'COMEX 金价' ? price : dxy)),
-        top: layout[4].titleTop, right: 48, show: !narrow },
-      { data: ['沪金期权成交量 PCR', '沪金期权持仓量 PCR']
-          .concat(pcrC && pcrC.length ? ['美国 GLD 期权 PCR'] : []),
-        top: layout[5].titleTop, right: 48, itemWidth: 14, show: !narrow },
+      mkLegend(['管理基金净持仓'].concat(price ? ['COMEX 金价'] : []), 0),
+      mkLegend(['管理基金(机构)', '生产商/贸易商(套保)', '掉期交易商',
+                '其他报告(中小投机)', '散户/非报告'], 1),
+      mkLegend(['管理基金多头', '管理基金空头'], 2),
+      mkLegend(['总持仓 OI'], 3),
+      mkLegend(['COMEX 金价', '美元指数 DXY'].filter(
+          s => (s === 'COMEX 金价' ? price : dxy)), 4),
+      mkLegend(['沪金期权成交量 PCR', '沪金期权持仓量 PCR']
+          .concat(pcrC && pcrC.length ? ['美国 GLD 期权 PCR'] : []), 5),
     ],
     grid: [0, 1, 2, 3, 4, 5].map(i => ({
       left: 60, right: 48,
@@ -426,7 +476,8 @@ function render() {
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1, 2, 3, 4, 5] },
-      { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4, 5], bottom: 8, height: 22 },
+      { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4, 5], bottom: 8,
+        height: narrow ? 26 : 22 },
     ],
     series: [
       // 图1: 管理基金净持仓 + 金价
@@ -521,6 +572,7 @@ function render() {
         { type: on ? 'legendSelect' : 'legendUnSelect', name: n });
     }
   }
+  updateZoomLabel();
 }
 
 document.querySelectorAll('[data-dim]').forEach(btn => {
@@ -543,6 +595,7 @@ document.querySelectorAll('[data-range]').forEach(btn => {
 // 尺寸变化时重绘: 桌面/手机布局(图例显隐)随宽度切换
 // 图例切换: 记住状态; PCR 恰好单独显示一条时给轨道序列灌数据, 否则清空。
 // 只更新序列数据, 不整体重绘 —— 整体 notMerge 重建会打乱 echarts legend 的开关状态机。
+chart.on('datazoom', updateZoomLabel);
 chart.on('legendselectchanged', e => {
   legendSel = e.selected;
   const vol = e.selected['沪金期权成交量 PCR'] !== false && lastPcrVol.length > 0;
@@ -555,6 +608,13 @@ chart.on('legendselectchanged', e => {
     { id: 'pcrBandUp',   data: band ? band.up : [] },
     { id: 'pcrBandDown', data: band ? band.lo : [] },
   ] });
+});
+// 滑块复位: 恢复完整时间范围 (与 iOS App 双击滑块同功能)
+document.getElementById('zoomReset').addEventListener('click', () => {
+  range = 'all';
+  document.querySelectorAll('[data-range]').forEach(
+    b => b.classList.toggle('active', b.dataset.range === 'all'));
+  render();
 });
 window.addEventListener('resize', () => { chart.resize(); render(); });
 // 字体加载完成后尺寸可能再变, load 时再校正一次
