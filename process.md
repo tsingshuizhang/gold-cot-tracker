@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-09-27（会话：网页手机端对齐 App、深色模式、真机打包、图表空白修复）。
+> 零成本接续。最后更新：2026-09-28（会话：COT"9/25 数据"误解排查、工作流失败诊断、发布日期显示优化、App 重装尝试）。
 
 ## 一句话项目
 
@@ -30,10 +30,20 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
 
 - **COT 周报**：每周五 15:30 ET 发布，数据截至**当周周二**。例：9/22(二) 的报告 9/25(五) 发布，
   线上"最新报告 2026-09-22"是正常断面，不是故障。下一期永远在下周五。
+  **为避免"怎么不是 9/25"的误解，已在看板/App 卡片上同时显示"发布于 2026-09-25"**。
 - **价格/技术指标**：交易日盘中每小时刷新（Actions 第二个 cron），线上 price/ohlc 通常到最近交易日。
 - **沪金 PCR**：上期所日频，休市日不更新；GLD PCR 来自 Yahoo，限流时自动隐藏。
 - 本地 `data/` 可能比线上旧（本地只在手动跑 `python gold_cot.py dashboard --weeks 520` 时更新），
   **线上以 Actions 提交为准**。本地 file:// 预览想刷新就手动跑该命令（依赖 `pip install yfinance curl_cffi`）。
+
+## GitHub Actions `update.yml` 维护
+
+- 工作流：**每天 UTC 23:30 全量 + 美股时段每小时刷新行情**。
+- 2026-09-28 发现工作流出现 `exit code 1` 失败（Node 20 提示只是弃用警告，非根因）。
+- 已改造：抓取步骤改为 `continue-on-error: true`，输出用 `tee` 写入 `data/last_update.log`，
+  提交步骤 `if: always()` 保证**失败时日志也提交到仓库**（便于本地排查）。
+- actions 版本已从 `checkout@v4 / setup-python@v5` 升到 `checkout@v5 / setup-python@v6`。
+- 排查时若再次出现失败，直接拉取仓库看 `data/last_update.log` 即可定位。
 
 ## iOS App 开发与安装
 
@@ -61,7 +71,8 @@ xcrun devicectl device install app --device <手机UDID> \
   注意证书 CN 括号里的 M4342XHZX7 是错的，OU 字段才是团队 ID。
 - **免费账号 7 天过期**：真机 App 到期打不开，重新跑上面两条命令即可（手机上已信任过证书不用重设）。
 - 用户真机：iPhone 17 Pro Max，UDID `00008150-001129390E62401C`。
-- 工程若需重新生成：`cd app && xcodegen`（tools/XcodeGen.zip 已内置二进制）。
+- **2026-09-28 真机安装遇 `com.apple.dt.CoreDeviceError 4016`**：`The device is not able to fulfill the requested usage assertion requirements.`
+  通常是手机**锁屏/熄屏/忙**导致；解锁并保持亮屏后重试即可。源码已更新（发布日期卡片）。
 
 ## 网页开发要点（血泪经验，勿重蹈）
 
@@ -118,9 +129,10 @@ xcrun devicectl device install app --device <手机UDID> \
 
 ## 当前状态
 
-- 线上（GitHub Pages @ 498e005）：两页图表/手机端图例/区间标签/时间复位/离线 ECharts 全部正常；
-  数据更新正常（COT 9/22 断面 = 当前最新一期）。
-- App：真机版为 2026-09-27 构建（含深色模式修复），**约 10/4 到期需重装**；
-  模拟器版与源码同步。
-- 待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）、
-  本地 data/ 落后于线上（需要时可手动跑 gold_cot.py 刷新）。
+- 线上（GitHub Pages）：两页图表/手机端图例/区间标签/时间复位/离线 ECharts 全部正常；
+  最新报告卡片已同时显示"发布于 2026-09-25"，避免 COT 报告期 vs 发布日混淆。
+- App：源码已更新发布日期显示；真机安装 2026-09-28 尝试失败（手机锁屏/忙，CoreDevice 4016），
+  解锁亮屏后重试即可。
+- GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；待下次运行验证失败根因。
+- 待处理（用户新提）：`barchart.com/stocks` 52 周数据页面显示问题（需确认是哪个项目/页面）。
+- 待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）。
