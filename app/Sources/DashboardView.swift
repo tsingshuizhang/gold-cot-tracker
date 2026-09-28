@@ -85,8 +85,8 @@ struct DashboardView: View {
             guard let last = s.last, let prev = s.dropLast().last else { return [] }
             let pub = Calendar.current.date(byAdding: .day, value: 3, to: last.date) ?? last.date
             return [
-                ("最新报告 (每周五发布)", DateUtil.short.string(from: last.date), nil,
-                 "\(DateUtil.short.string(from: pub)) 发布"),
+                ("最新报告发布", DateUtil.short.string(from: pub), nil,
+                 "数据截至 \(DateUtil.short.string(from: last.date))（周二）"),
                 ("管理基金净持仓", fmt(last.net), last.net - prev.net, nil),
                 ("散户/非报告净持仓", fmt(last.nr), last.nr - prev.nr, nil),
                 ("净多占总持仓", String(format: "%.1f%%", last.oi != 0 ? last.net / last.oi * 100 : 0), nil, nil),
