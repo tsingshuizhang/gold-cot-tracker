@@ -2,6 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -31,6 +33,17 @@
   .applink:hover { background: #2471a3; }
   .status { margin-left: auto; display: flex; align-items: center; gap: 12px;
             font-size: 12px; color: #95a5a6; flex-wrap: wrap; }
+  .quote-bar {
+    background: #fff; border-radius: 10px; padding: 12px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px;
+    display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
+  }
+  .quote-item { display: flex; align-items: baseline; gap: 8px; }
+  .quote-name { font-size: 13px; color: #7f8c8d; }
+  .quote-price { font-size: 20px; font-weight: 600; }
+  .quote-change { font-size: 12px; }
+  .quote-time { font-size: 11px; color: #95a5a6; margin-left: auto; }
+  .up { color: #c0392b; } .down { color: #27ae60; }
   .btn {
     border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
     padding: 5px 14px; font-size: 13px; cursor: pointer; color: #2c3e50;
@@ -90,12 +103,28 @@
     </div>
   </div>
 
+  <div class="quote-bar" id="quoteBar">
+    <div class="quote-item">
+      <span class="quote-name">伦敦金 XAU/USD</span>
+      <span class="quote-price" id="xauLast">--</span>
+      <span class="quote-change" id="xauChange">--</span>
+    </div>
+    <div class="quote-item">
+      <span class="quote-name">COMEX 黄金 GC</span>
+      <span class="quote-price" id="gcLast">--</span>
+      <span class="quote-change" id="gcChange">--</span>
+    </div>
+    <span class="quote-time" id="quoteTime">实时行情加载中...</span>
+  </div>
+
   <div id="chart"></div>
   <div id="zoomlabel"></div>
   <div class="note note-long">
     本页数据独立于 COT 持仓页: 每 60 秒自动重载
     <code>data/ta_data.js</code>, 也可点"刷新数据"手动重载;
     行情增量更新(只补缺失日期, 不重抓历史)请运行 <code>./run.sh ta</code>。
+    页面顶部<b>伦敦金 / COMEX 实时报价</b>来自新浪财经快照, 每 10 秒自动刷新;
+    K线/均线/MACD 等仍基于日频收盘数据, 收盘后由 GitHub Actions 更新。<br>
     布林带 (20, 2); 均线 MA5/10/20/60/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
     K线周期可切换 日K/周K/月K (周期聚合: 开=首, 收=末, 高=最高, 低=最低);
     金叉/死叉/顶背离/底背离 标注规则见 README.md。
@@ -564,6 +593,63 @@ chart.on('datazoom', () => {
     markLine: fibMarkLine(visible) }] });
 });
 
+// ---------------- 实时行情条 (新浪 JSONP, 每 10 秒刷新) ----------------
+function parseSinaQuote(code, body, name) {
+  const p = body.split(',');
+  if (p.length < 14) return null;
+  const last = parseFloat(p[3]);
+  const high = parseFloat(p[4]);
+  const low = parseFloat(p[5]);
+  const prev_close = parseFloat(p[7] || p[1]) || null;
+  const open = parseFloat(p[8]) || null;
+  const change = prev_close ? last - prev_close : null;
+  const change_pct = prev_close ? change / prev_close * 100 : null;
+  return {
+    symbol: code, name: name, last: last, high: high, low: low,
+    open: open, prev_close: prev_close,
+    change: change ? +change.toFixed(2) : null,
+    change_pct: change_pct ? +change_pct.toFixed(2) : null,
+    time: p[6], date: new Date().toISOString().slice(0, 10)
+  };
+}
+
+function renderQuotes(q) {
+  function setChange(id, c, p) {
+    const el = document.getElementById(id);
+    if (!el || c == null) return;
+    const sign = c >= 0 ? '+' : '';
+    el.textContent = `${sign}${c} (${sign}${p}%)`;
+    el.className = 'quote-change ' + (c >= 0 ? 'up' : 'down');
+  }
+  if (q && q.xau) {
+    document.getElementById('xauLast').textContent = q.xau.last.toFixed(2);
+    setChange('xauChange', q.xau.change, q.xau.change_pct);
+  }
+  if (q && q.gc) {
+    document.getElementById('gcLast').textContent = q.gc.last.toFixed(2);
+    setChange('gcChange', q.gc.change, q.gc.change_pct);
+  }
+  const time = (q && q.xau && q.xau.time) || (q && q.gc && q.gc.time) || '';
+  const date = (q && q.xau && q.xau.date) || (q && q.gc && q.gc.date) || '';
+  document.getElementById('quoteTime').textContent =
+    (date && time) ? `快照 ${date} ${time} · 每 10 秒刷新` : '实时行情加载中...';
+}
+
+function refreshSinaQuotes() {
+  const s = document.createElement('script');
+  s.src = 'https://hq.sinajs.cn/list=hf_XAU,hf_GC&t=' + Date.now();
+  s.onload = () => {
+    const q = {};
+    if (window.hq_str_hf_XAU)
+      q.xau = parseSinaQuote('hf_XAU', window.hq_str_hf_XAU, '伦敦金 XAU/USD');
+    if (window.hq_str_hf_GC)
+      q.gc = parseSinaQuote('hf_GC', window.hq_str_hf_GC, 'COMEX 黄金 GC');
+    renderQuotes(q);
+  };
+  s.onerror = () => { /* 静默失败, 静态快照仍显示 */ };
+  document.head.appendChild(s);
+}
+
 // ---------------- 数据加载 / 自动刷新 ----------------
 // 用 <script> 标签加载本地数据文件: file:// 直开不受 CORS 限制
 const elStatus = document.getElementById('updated');
@@ -585,6 +671,7 @@ function loadData(manual) {
     }
     lastUpdated = ta.updated;
     render(ta);
+    renderQuotes(ta.quotes || {});
     elStatus.textContent = '数据更新于 ' + ta.updated + ' · 每 '
         + AUTO_REFRESH_SEC + ' 秒自动检查';
   };
@@ -613,6 +700,8 @@ window.addEventListener('resize', () => chart.resize());
 window.addEventListener('load', () => chart.resize());
 setInterval(() => loadData(false), AUTO_REFRESH_SEC * 1000);
 loadData(false);
+refreshSinaQuotes();
+setInterval(refreshSinaQuotes, 10000);
 </script>
 </body>
 </html>

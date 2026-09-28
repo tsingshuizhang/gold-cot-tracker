@@ -617,6 +617,64 @@ def _fetch_ohlc_range(beg: datetime, end: datetime):
     return _fetch_ohlc_yf_range(beg, end)
 
 
+def fetch_sina_quotes() -> dict:
+    """从新浪抓取伦敦金(hf_XAU)和 COMEX 金(hf_GC)实时快照。
+
+    返回 {"xau": {...}, "gc": {...}}; 失败时返回空字典。
+    字段: last, high, low, open, prev_close, change, change_pct, time, date。
+    """
+    url = "https://hq.sinajs.cn/list=hf_XAU,hf_GC"
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://finance.sina.com.cn/",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read().decode("gbk", errors="ignore")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [提示] 新浪实时行情抓取失败: {exc}")
+        return {}
+    out: dict[str, dict] = {}
+    for line in text.splitlines():
+        m = re.search(r'var hq_str_(hf_\w+)="([^"]*)"', line)
+        if not m:
+            continue
+        code, body = m.group(1), m.group(2)
+        parts = body.split(",")
+        if len(parts) < 14:
+            continue
+        try:
+            # 实测字段: [3]=最新价 [4]=最高 [5]=最低 [7]/[1]=昨收 [8]=开盘 [6]=时间
+            last = float(parts[3])
+            high = float(parts[4])
+            low = float(parts[5])
+            prev_close = (float(parts[7]) if parts[7]
+                          else float(parts[1]) if parts[1] else None)
+            open_price = float(parts[8]) if parts[8] else None
+            time = parts[6]
+            # Sina 该字段为商品名称而非日期, 用本地当前日期
+            date = datetime.now().strftime("%Y-%m-%d")
+            change = (last - prev_close) if prev_close else None
+            change_pct = (change / prev_close * 100) if prev_close else None
+            key = "xau" if code == "hf_XAU" else "gc"
+            out[key] = {
+                "symbol": code,
+                "name": "伦敦金 XAU/USD" if code == "hf_XAU" else "COMEX 黄金 GC",
+                "last": last,
+                "high": high,
+                "low": low,
+                "open": open_price,
+                "prev_close": prev_close,
+                "change": round(change, 2) if change is not None else None,
+                "change_pct": round(change_pct, 2) if change_pct is not None else None,
+                "time": time,
+                "date": date,
+            }
+        except Exception as exc:  # noqa: BLE001
+            print(f"  [提示] 新浪 {code} 解析失败: {exc}")
+    return out
+
+
 def fetch_gold_ohlc(weeks: int):
     """COMEX 黄金日频 OHLC -> [[日期, 开, 收, 高, 低], ...], 失败返回 None。
 
@@ -1123,14 +1181,16 @@ def fetch_dxy_pairs_incremental(weeks: int):
 
 
 def build_ta_data(weeks: int) -> dict | None:
-    """组装技术分析页数据 (OHLC 走增量缓存 + 开采成本常量)。"""
+    """组装技术分析页数据 (OHLC 走增量缓存 + 开采成本常量 + 新浪实时快照)。"""
     ohlc = fetch_gold_ohlc(weeks)
     if not ohlc:
         return None
+    quotes = fetch_sina_quotes()
     return {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "ohlc": ohlc,
         "cost": MINING_COST_AISC,
+        "quotes": quotes,
     }
 
 
