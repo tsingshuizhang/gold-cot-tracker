@@ -1,0 +1,23 @@
+# 一次性核验: 从 GitHub 服务器直接查询 CFTC 官方, 确认最新一期报告日期
+name: verify-cftc-latest
+on:
+  push:
+    paths: ['.github/workflows/verify_cftc.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 查询 CFTC 官方最新三期黄金 COT 报告日期
+        run: |
+          curl -s "https://data.cftc.gov/resource/6dca-aqww.json?\$select=report_date_as_yyyy_mm_dd&\$where=market_and_exchange_names='GOLD - COMMODITY EXCHANGE INC.'&\$order=report_date_as_yyyy_mm_dd%20DESC&\$limit=3" | tee cftc_latest.json
+      - name: 提交核验结果
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          echo "checked_at_utc=$(date -u '+%Y-%m-%d %H:%M')" >> cftc_latest.json
+          git add cftc_latest.json
+          git commit -m "chore: CFTC最新报告日期核验 [skip ci]" && git push || true
