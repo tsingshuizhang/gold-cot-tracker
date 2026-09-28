@@ -274,9 +274,9 @@ function renderCards() {
   const deltaHtml = v => v == null ? '' :
     `<span class="${v >= 0 ? 'up' : 'down'}">${v >= 0 ? '+' : ''}${fmt(v)} 周环比</span>`;
   document.getElementById('cards').innerHTML = `
-    <div class="card"><div class="label">最新报告发布</div>
-      <div class="value">${pubStr}</div>
-      <div class="delta" style="color:#95a5a6">数据截至 ${last.d}（周二）</div></div>
+    <div class="card"><div class="label">最新报告日期</div>
+      <div class="value">${last.d}</div>
+      <div class="delta" style="color:#95a5a6">${pubStr} 发布</div></div>
     <div class="card"><div class="label">管理基金净持仓 (手)</div>
       <div class="value ${last.net >= 0 ? 'up' : 'down'}">${last.net >= 0 ? '+' : ''}${fmt(last.net)}</div>
       <div class="delta">${deltaHtml(wow)}</div></div>
@@ -289,9 +289,9 @@ function renderCards() {
       <div class="value">${fmt(last.oi)}</div>
       <div class="delta">${deltaHtml(prev ? last.oi - prev.oi : null)}</div></div>`;
   document.getElementById('subtitle').textContent =
-    `COMEX 黄金期货 · 数据来源: 美国 CFTC 官方 · 最新报告 ${pubStr} 发布（数据截至 ${last.d}） · 共 ${RAW.length} 期`;
+    `COMEX 黄金期货 · 数据来源: 美国 CFTC 官方 · 最新报告 ${last.d}（${pubStr} 发布） · 共 ${RAW.length} 期`;
   document.getElementById('schedule-banner').innerHTML =
-    `CFTC COT 周报每周五 15:30 ET 发布，数据截至当周周二。当前最新一期发布于 <b>${pubStr}</b>，数据截至 <b>${last.d}</b>。`;
+    `CFTC COT 周报每周五 15:30 ET 发布，数据截至当周周二。当前最新一期报告日期为 <b>${last.d}</b>，于 <b>${pubStr}</b> 发布。`;
 }
 
 function tipValue(p) {
