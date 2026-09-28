@@ -79,15 +79,18 @@ struct DashboardView: View {
     // MARK: 顶部指标卡片
 
     private var cards: some View {
-        let rows: [(String, String, Double?)] = {
+        // 第4元 = 附加说明行 (灰色小字); COT 每周五发布(数据截至周二): 发布日 = 报告期 + 3 天
+        let rows: [(String, String, Double?, String?)] = {
             let s = store.cot.cot.sorted { $0.date < $1.date }
             guard let last = s.last, let prev = s.dropLast().last else { return [] }
+            let pub = Calendar.current.date(byAdding: .day, value: 3, to: last.date) ?? last.date
             return [
-                ("最新报告", DateUtil.short.string(from: last.date), nil),
-                ("管理基金净持仓", fmt(last.net), last.net - prev.net),
-                ("散户/非报告净持仓", fmt(last.nr), last.nr - prev.nr),
-                ("净多占总持仓", String(format: "%.1f%%", last.oi != 0 ? last.net / last.oi * 100 : 0), nil),
-                ("总持仓 Open Interest", fmt(last.oi), last.oi - prev.oi),
+                ("最新报告 (每周五发布)", DateUtil.short.string(from: last.date), nil,
+                 "\(DateUtil.short.string(from: pub)) 发布"),
+                ("管理基金净持仓", fmt(last.net), last.net - prev.net, nil),
+                ("散户/非报告净持仓", fmt(last.nr), last.nr - prev.nr, nil),
+                ("净多占总持仓", String(format: "%.1f%%", last.oi != 0 ? last.net / last.oi * 100 : 0), nil, nil),
+                ("总持仓 Open Interest", fmt(last.oi), last.oi - prev.oi, nil),
             ]
         }()
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -99,6 +102,9 @@ struct DashboardView: View {
                         Text("\(d >= 0 ? "+" : "")\(fmt(d)) 周环比")
                             .font(.caption2)
                             .foregroundStyle(d >= 0 ? .red : .green)
+                    }
+                    if let note = r.3 {
+                        Text(note).font(.caption2).foregroundStyle(.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
