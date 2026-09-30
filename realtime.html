@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-title" content="黄金实时行情">
 <link rel="apple-touch-icon" href="app-icon.png">
 <title>贵金属实时行情 | 黄金 CFTC COT</title>
+<script src="echarts.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: auto; }
@@ -18,41 +19,43 @@
     background: #f5f6fa; color: #2c3e50; padding: 20px;
   }
   .container { width: 100%; max-width: 960px; margin: 0 auto; }
-  .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
   h1 { font-size: 22px; }
   .navlink { font-size: 13px; color: #2980b9; text-decoration: none; white-space: nowrap; }
   .navlink:hover { text-decoration: underline; }
   .status { margin-left: auto; font-size: 12px; color: #95a5a6; }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
   .card {
-    background: #fff; border-radius: 12px; padding: 18px;
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06); cursor: pointer;
+    border: 2px solid transparent; transition: border-color .15s;
+  }
+  .card.active { border-color: #f39c12; }
+  .card .name { font-size: 13px; color: #7f8c8d; margin-bottom: 2px; }
+  .card .price { font-size: 24px; font-weight: 600; }
+  .card .change { font-size: 12px; margin-top: 2px; }
+  .card .time { font-size: 10px; color: #95a5a6; margin-top: 6px; }
+  .up { color: #c0392b; } .down { color: #27ae60; } .gray { color: #95a5a6; }
+
+  .chart-wrap {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
     box-shadow: 0 1px 4px rgba(0,0,0,.06);
   }
-  .card .name { font-size: 14px; color: #7f8c8d; margin-bottom: 4px; }
-  .card .symbol { font-size: 11px; color: #95a5a6; margin-bottom: 10px; }
-  .card .price { font-size: 32px; font-weight: 600; margin-bottom: 6px; }
-  .card .change { font-size: 14px; margin-bottom: 14px; }
-  .card .details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 12px; color: #555; }
-  .card .details .label { color: #95a5a6; }
-  .card .time { margin-top: 12px; font-size: 11px; color: #95a5a6; text-align: right; }
-  .up { color: #c0392b; }
-  .down { color: #27ae60; }
-  .gray { color: #95a5a6; }
+  .chart-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chart-title h2 { font-size: 16px; }
+  .chart-title .ohlc { font-size: 12px; color: #7f8c8d; }
+  .chart-title .ohlc b { color: #2c3e50; }
+  #chart { width: 100%; height: 520px; }
+  .approx-note { font-size: 11px; color: #e67e22; margin-top: 6px; display: none; }
 
-  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
-  .btn {
-    border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
-    padding: 7px 16px; font-size: 13px; cursor: pointer; color: #2c3e50;
-  }
-  .btn:hover { border-color: #f39c12; color: #f39c12; }
-
-  .note { font-size: 12px; color: #95a5a6; line-height: 1.7; }
+  .note { font-size: 12px; color: #95a5a6; line-height: 1.7; margin-top: 12px; }
 
   @media (max-width: 768px) {
     body { padding: 12px; }
     h1 { font-size: 18px; }
-    .card .price { font-size: 26px; }
+    #chart { height: 440px; }
+    .card .price { font-size: 20px; }
   }
 </style>
 </head>
@@ -65,77 +68,192 @@
     <span class="status" id="status">加载中...</span>
   </div>
 
-  <div class="toolbar">
-    <button class="btn" id="refreshBtn">立即刷新</button>
-    <span class="note">每 10 秒自动刷新; 伦敦金/COMEX 来自新浪财经, 上金 T+D 来自东方财富。</span>
+  <div class="cards" id="cards"></div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">
+      <h2 id="chartName">--</h2>
+      <span class="ohlc" id="chartOhlc"></span>
+    </div>
+    <div id="chart"></div>
+    <div class="approx-note" id="approxNote">注: 本品种历史K线暂时用 COMEX 黄金形态按实时比价折算显示, GitHub Actions 抓到官方源数据后自动切换为真实数据。</div>
   </div>
 
-  <div class="cards" id="cards">
-    <div class="card"><div class="name">伦敦金 XAU/USD</div><div class="symbol">新浪 hf_XAU</div><div class="price gray">--</div></div>
-    <div class="card"><div class="name">COMEX 黄金 GC</div><div class="symbol">新浪 hf_GC</div><div class="price gray">--</div></div>
-    <div class="card"><div class="name">上海黄金 T+D AUTD</div><div class="symbol">东方财富 118.AUTD</div><div class="price gray">--</div></div>
+  <div class="note">
+    每 10 秒自动刷新实时报价并更新当前 K线柱; 点击上方卡片切换品种。
+    伦敦金/COMEX 来自新浪财经, 上金 T+D 来自东方财富; 历史K线由 GitHub Actions 定时生成
+    (<code>data/rt_charts.js</code>)。MACD(12, 26, 9), 柱 = 2×(DIF−DEA)。
   </div>
 </div>
 
 <script>
 const AUTO_REFRESH_SEC = 10;
-const cards = document.getElementById('cards');
 const statusEl = document.getElementById('status');
+const cardsEl = document.getElementById('cards');
+const chartNameEl = document.getElementById('chartName');
+const chartOhlcEl = document.getElementById('chartOhlc');
+const approxNoteEl = document.getElementById('approxNote');
+const INSTRUMENTS = {
+  xau: { label: '伦敦金 XAU/USD', unit: '美元/盎司', digits: 2 },
+  gc:  { label: 'COMEX 黄金 GC',  unit: '美元/盎司', digits: 2 },
+  sge: { label: '上海黄金 T+D',   unit: '元/克',    digits: 2 },
+};
+let currentKey = 'xau';
+let chartsData = null;    // window.RT_CHARTS
+window.liveQuotes = {};
 
-// 格式化数字
+if (typeof echarts === 'undefined') {
+  document.getElementById('chart').innerHTML =
+    '<div style="padding:60px 20px;text-align:center;color:#95a5a6;font-size:13px">图表组件加载失败，请强制刷新页面</div>';
+  throw new Error('echarts failed to load');
+}
+const chart = echarts.init(document.getElementById('chart'));
+const COLORS = {
+  up: '#e74c3c', down: '#27ae60',
+  dif: '#e74c3c', dea: '#2980b9', macdUp: '#e74c3c', macdDn: '#27ae60',
+  mark: '#f39c12',
+};
+
 function fmt(n, digits) {
   if (n == null || isNaN(n)) return '--';
-  return n.toLocaleString('en-US', {
-    minimumFractionDigits: digits, maximumFractionDigits: digits
+  return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+// ---------------- 报价卡片 ----------------
+function renderCards() {
+  cardsEl.innerHTML = Object.keys(INSTRUMENTS).map(k => {
+    const q = window.liveQuotes[k];
+    const cls = !q || q.change == null ? 'gray' : (q.change >= 0 ? 'up' : 'down');
+    const sign = !q || q.change == null ? '' : (q.change >= 0 ? '+' : '');
+    const chg = !q || q.change == null ? '--'
+      : `${sign}${fmt(q.change, 2)} (${sign}${fmt(q.change_pct, 2)}%)`;
+    return `<div class="card ${k === currentKey ? 'active' : ''}" data-key="${k}">
+      <div class="name">${INSTRUMENTS[k].label}</div>
+      <div class="price ${cls}">${q ? fmt(q.last, 2) : '--'}</div>
+      <div class="change ${cls}">${chg} <span class="gray">${INSTRUMENTS[k].unit}</span></div>
+      <div class="time">${q ? (q.date + ' ' + q.time) : '等待数据...'} · 点击切换图表</div>
+    </div>`;
+  }).join('');
+  cardsEl.querySelectorAll('.card').forEach(c => {
+    c.addEventListener('click', () => { currentKey = c.dataset.key; renderCards(); renderChart(); });
   });
 }
 
-function renderCard(key, q) {
-  const colorClass = (q.change == null) ? 'gray' : (q.change >= 0 ? 'up' : 'down');
-  const sign = (q.change == null) ? '' : (q.change >= 0 ? '+' : '');
-  const changeText = (q.change == null) ? '--'
-    : `${sign}${fmt(q.change, 2)} (${sign}${fmt(q.change_pct, 2)}%)`;
-  const unit = key === 'sge' ? '元/克' : '美元/盎司';
-  return `
-    <div class="card">
-      <div class="name">${q.name || '-'}</div>
-      <div class="symbol">${q.symbol || key}</div>
-      <div class="price ${colorClass}">${fmt(q.last, 2)}</div>
-      <div class="change ${colorClass}">${changeText} <span style="color:#95a5a6">${unit}</span></div>
-      <div class="details">
-        <div><span class="label">最高</span> ${fmt(q.high, 2)}</div>
-        <div><span class="label">最低</span> ${fmt(q.low, 2)}</div>
-        <div><span class="label">开盘</span> ${fmt(q.open, 2)}</div>
-        <div><span class="label">昨收</span> ${fmt(q.prev_close, 2)}</div>
-        ${q.volume != null ? `<div><span class="label">成交量</span> ${q.volume.toLocaleString()}</div>` : ''}
-      </div>
-      <div class="time">快照 ${q.date || '-'} ${q.time || '-'} · 每 ${AUTO_REFRESH_SEC} 秒刷新</div>
-    </div>`;
+// ---------------- 历史K线 + 实时合成当日bar ----------------
+function displayRows(key) {
+  const pack = (chartsData || {})[key];
+  const rows = (pack && pack.rows) ? pack.rows.slice() : [];
+  const q = window.liveQuotes[key];
+  if (q && q.last != null) {
+    const today = q.date;
+    const live = [today, q.open ?? q.last, q.last,
+                  Math.max(q.high ?? q.last, q.last), Math.min(q.low ?? q.last, q.last)];
+    if (rows.length && rows[rows.length - 1][0] === today) rows[rows.length - 1] = live;
+    else rows.push(live);
+  }
+  return rows;
 }
 
-function renderAll(q) {
-  const order = ['xau', 'gc', 'sge'];
-  cards.innerHTML = order.map(k => q[k] ? renderCard(k, q[k])
-    : `<div class="card"><div class="name">${k.toUpperCase()}</div><div class="price gray">--</div><div class="time">暂无可用的实时数据</div></div>`).join('');
+// ---------------- MACD ----------------
+function calcEMA(vals, n) {
+  const k = 2 / (n + 1); const out = []; let e = null;
+  for (let i = 0; i < vals.length; i++) {
+    e = e === null ? vals[i] : vals[i] * k + e * (1 - k);
+    out.push(e);
+  }
+  return out;
+}
+function calcMACD(closes, fast = 12, slow = 26, sig = 9) {
+  const ef = calcEMA(closes, fast), es = calcEMA(closes, slow);
+  const dif = closes.map((_, i) => ef[i] - es[i]);
+  const dea = calcEMA(dif, sig);
+  return { dif, dea, hist: dif.map((d, i) => (d - dea[i]) * 2) };
 }
 
-function updateStatus(text) {
-  statusEl.textContent = text;
-}
+// ---------------- 渲染 K线 + MACD ----------------
+function renderChart() {
+  const rows = displayRows(currentKey);
+  const pack = (chartsData || {})[currentKey];
+  chartNameEl.textContent = INSTRUMENTS[currentKey].label + ' 日K';
+  approxNoteEl.style.display = (pack && pack.approx) ? 'block' : 'none';
+  if (!rows.length) {
+    chart.clear();
+    chart.setOption({
+      title: { text: '历史K线生成中\n(GitHub Actions 下一轮更新后显示)', left: 'center', top: 'middle',
+               textStyle: { fontSize: 14, color: '#95a5a6', fontWeight: 'normal' } }
+    });
+    chartOhlcEl.textContent = '';
+    return;
+  }
+  // 只显示最近 180 根, 避免图过宽
+  const view = rows.slice(-180);
+  const dates = view.map(r => r[0]);
+  const kline = view.map(r => [r[1], r[2], r[3], r[4]]);  // 开 收 高 低 (ECharts candlestick 顺序)
+  const closes = view.map(r => r[2]);
+  const { dif, dea, hist } = calcMACD(closes);
+  const last = closes[closes.length - 1];
+  const digits = INSTRUMENTS[currentKey].digits;
 
-// ---------------- 静态快照 (Actions 生成) ----------------
-function loadStatic() {
-  const s = document.createElement('script');
-  s.src = 'data/rt_quotes.js?t=' + Date.now();
-  s.onload = () => {
-    const d = window.RT_QUOTES;
-    if (d && d.quotes) {
-      renderAll(d.quotes);
-      updateStatus('静态快照 ' + d.updated + ' · 正在尝试实时刷新...');
-    }
-  };
-  s.onerror = () => updateStatus('静态快照加载失败');
-  document.head.appendChild(s);
+  // 标题 OHLC 摘要
+  const lb = view[view.length - 1];
+  chartOhlcEl.innerHTML =
+    `开 <b>${fmt(lb[1], digits)}</b> 收 <b>${fmt(lb[2], digits)}</b> ` +
+    `高 <b style="color:#c0392b">${fmt(lb[3], digits)}</b> 低 <b style="color:#27ae60">${fmt(lb[4], digits)}</b>`;
+
+  const upColor = COLORS.up, downColor = COLORS.down;
+  chart.setOption({
+    animation: false,
+    legend: { show: false },
+    grid: [
+      { left: 70, right: 20, top: 30, height: '58%' },
+      { left: 70, right: 20, top: '72%', height: '18%' },
+    ],
+    xAxis: [
+      { type: 'category', data: dates, gridIndex: 0, axisLabel: { fontSize: 10 },
+        axisTick: { show: false } },
+      { type: 'category', data: dates, gridIndex: 1, axisLabel: { fontSize: 10 } },
+    ],
+    yAxis: [
+      { scale: true, gridIndex: 0, position: 'left',
+        axisLabel: { fontSize: 10, formatter: v => v.toFixed(0) },
+        splitLine: { lineStyle: { color: '#eee' } } },
+      { scale: true, gridIndex: 1, position: 'left',
+        axisLabel: { fontSize: 9 }, splitLine: { show: false } },
+    ],
+    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 55, end: 100 }],
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'cross' },
+      formatter: ps => {
+        const i = ps[0].dataIndex;
+        const v = view[i];
+        const c = v[2] >= v[1] ? upColor : downColor;
+        return `${v[0]}<br/>开 ${fmt(v[1], digits)} 收 <b style="color:${c}">${fmt(v[2], digits)}</b><br/>` +
+               `高 ${fmt(v[3], digits)} 低 ${fmt(v[4], digits)}<br/>` +
+               `<span style="font-size:10px;color:#95a5a6">MACD DIF ${fmt(dif[i], 2)} DEA ${fmt(dea[i], 2)}</span>`;
+      },
+    },
+    series: [
+      {
+        name: '日K', type: 'candlestick', data: kline,
+        itemStyle: {
+          color: upColor, color0: downColor,
+          borderColor: upColor, borderColor0: downColor,
+        },
+        markLine: {
+          silent: true, symbol: 'none', animation: false,
+          lineStyle: { color: COLORS.mark, type: 'dashed', width: 1 },
+          label: { position: 'insideEndTop', fontSize: 10, formatter: fmt(last, digits) },
+          data: [{ yAxis: last }],
+        },
+      },
+      { name: 'DIF', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dif,
+        showSymbol: false, lineStyle: { width: 1.2, color: COLORS.dif } },
+      { name: 'DEA', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dea,
+        showSymbol: false, lineStyle: { width: 1.2, color: COLORS.dea } },
+      { name: 'MACD', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: hist, barMaxWidth: 5,
+        itemStyle: { color: p => (p.value >= 0 ? COLORS.macdUp : COLORS.macdDn) } },
+    ],
+  }, true);
 }
 
 // ---------------- 新浪实时行情 JSONP ----------------
@@ -162,15 +280,13 @@ function refreshSina() {
   const s = document.createElement('script');
   s.src = 'https://hq.sinajs.cn/list=hf_XAU,hf_GC&t=' + Date.now();
   s.onload = () => {
-    const q = window.liveQuotes || {};
+    const q = window.liveQuotes;
     if (window.hq_str_hf_XAU)
       q.xau = parseSinaQuote('hf_XAU', window.hq_str_hf_XAU, '伦敦金 XAU/USD');
     if (window.hq_str_hf_GC)
       q.gc = parseSinaQuote('hf_GC', window.hq_str_hf_GC, 'COMEX 黄金 GC');
-    window.liveQuotes = q;
-    renderAll(q);
+    renderCards(); renderChart();
     updateStatus('新浪实时已更新 · ' + new Date().toLocaleTimeString('zh-CN'));
-    // 新浪更新完再单独拉东方财富(避免互相覆盖)
     refreshEastmoney();
   };
   s.onerror = () => updateStatus('新浪实时行情失败, 显示静态快照');
@@ -180,7 +296,7 @@ function refreshSina() {
 // ---------------- 东方财富实时行情 JSONP (上海黄金 T+D) ----------------
 function emCallback(payload) {
   const data = (payload && payload.data) || {};
-  const scale = 100.0;  // AUTD 字段放大 100 倍
+  const scale = 100.0;
   function fv(key) {
     const v = data[key];
     return v != null ? parseFloat(v) / scale : null;
@@ -189,19 +305,15 @@ function emCallback(payload) {
   const prev_close = fv('f60');
   const change = (last != null && prev_close != null) ? last - prev_close : null;
   const change_pct = (change && prev_close) ? change / prev_close * 100 : null;
-  const q = window.liveQuotes || {};
-  q.sge = {
-    symbol: '118.AUTD',
-    name: '上海黄金 T+D AUTD',
+  window.liveQuotes.sge = {
+    symbol: '118.AUTD', name: '上海黄金 T+D AUTD',
     last: last, high: high, low: low, open: open, prev_close: prev_close,
-    volume: data['f47'], amount: data['f48'],
     change: change != null ? +change.toFixed(2) : null,
     change_pct: change_pct != null ? +change_pct.toFixed(2) : null,
     time: new Date().toLocaleTimeString('zh-CN'),
     date: new Date().toISOString().slice(0, 10)
   };
-  window.liveQuotes = q;
-  renderAll(q);
+  renderCards(); renderChart();
   updateStatus('实时行情已更新 · ' + new Date().toLocaleTimeString('zh-CN'));
 }
 
@@ -211,16 +323,42 @@ function refreshEastmoney() {
   s.src = 'https://push2.eastmoney.com/api/qt/stock/get?secid=118.AUTD&fields=' + fields
         + '&cb=emCallback&t=' + Date.now();
   s.onerror = () => {
-    // 东方财富失败时, 如果新浪有数据, 至少保留新浪两条
-    if (window.liveQuotes) renderAll(window.liveQuotes);
-    updateStatus('东方财富(上金T+D)实时失败, 显示其他来源');
+    if (window.liveQuotes && (window.liveQuotes.xau || window.liveQuotes.gc)) {
+      renderCards(); renderChart();
+    }
+    updateStatus('东方财富(上金T+D)实时失败, 已用静态快照');
   };
   document.head.appendChild(s);
 }
 
-// ---------------- 初始化 ----------------
-window.liveQuotes = {};
-document.getElementById('refreshBtn').addEventListener('click', refreshSina);
+// ---------------- 静态历史K线 + 静态快照 ----------------
+function loadStatic() {
+  // 历史K线
+  const sc = document.createElement('script');
+  sc.src = 'data/rt_charts.js?t=' + Date.now();
+  sc.onload = () => {
+    chartsData = window.RT_CHARTS || null;
+    renderChart();
+  };
+  sc.onerror = () => { chartsData = null; renderChart(); };
+  document.head.appendChild(sc);
+  // 静态报价快照
+  const sq = document.createElement('script');
+  sq.src = 'data/rt_quotes.js?t=' + Date.now();
+  sq.onload = () => {
+    const d = window.RT_QUOTES;
+    if (d && d.quotes) {
+      window.liveQuotes = Object.assign({}, d.quotes);
+      renderCards(); renderChart();
+      updateStatus('静态快照 ' + d.updated + ' · 实时刷新中...');
+    }
+  };
+  document.head.appendChild(sq);
+}
+
+function updateStatus(text) { statusEl.textContent = text; }
+
+window.addEventListener('resize', () => chart.resize());
 loadStatic();
 refreshSina();
 setInterval(refreshSina, AUTO_REFRESH_SEC * 1000);

@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-10-01（会话：新增贵金属实时行情页 realtime.html）。
+> 零成本接续。最后更新：2026-10-01（会话：realtime.html 增加 K线+MACD 实时图表）。
 
 ## 一句话项目
 
@@ -35,6 +35,10 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
   作为日频 K线的补充。
 - **上海黄金 T+D AUTD**：东方财富 `118.AUTD` 实时快照；因该源不支持跨域 JSONP，
   浏览器实时页会优先尝试东方财富 JSONP，失败时回落到 Actions 生成的静态快照（`data/rt_quotes.js`）。
+- **realtime.html 图表数据**：`data/rt_charts.js`（Actions 生成）含三个品种日K历史
+  —— gc 用 `ta_ohlc.json`（真实）、xau 优先 Yahoo `XAUUSD=X`（缓存 `data/xau_ohlc.json`，
+  失败时 COMEX 形态 × 实时比价折算, 页面显示橙色提示）、sge 用东财 `118.AUTD` K线
+  （缓存 `data/sge_ohlc.json`）。页面每 10 秒把实时报价合成"当日未收盘 bar"追加到K线末端。
 - **沪金期权 PCR**：上期所官方日频，休市日不更新；国庆/春节等长假会断档数日。
 - **美国 GLD 期权 PCR**：来自 Yahoo 期权链快照，经常限流/不可用，看板会自动隐藏。
 - 本地 `data/` 可能比线上旧（本地只在手动跑 `python gold_cot.py dashboard --weeks 520` 时更新），

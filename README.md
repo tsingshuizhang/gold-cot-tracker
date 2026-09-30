@@ -135,6 +135,9 @@ python gold_cot.py all                   # 一次全部执行
 - 每 **10 秒**自动刷新; 优先浏览器直接拉取新浪/东方财富实时接口,
   失败时回落到 Actions 生成的 `data/rt_quotes.js` 静态快照
 - 显示最新价、涨跌额/涨跌幅、最高/最低/开盘/昨收、成交量/成交额
+- **K线 + MACD(12,26,9) 实时图表**: 点击卡片切换品种, 历史日K来自
+  `data/rt_charts.js` (Actions 生成; 伦敦金历史优先 Yahoo XAUUSD=X,
+  不可得时按 COMEX 形态×实时比价折算并标注), 当前 bar 由实时报价每 10 秒合成更新
 
 ## iOS App (app/ 目录)
 
@@ -182,6 +185,9 @@ MACD 参数 (12, 26, 9), `DIF = EMA12 − EMA26`, `DEA = EMA(DIF, 9)`,
 - `data/dxy_daily.json` — 美元指数日频收盘价增量缓存 (同上策略)
 - `data/gold_pcr_shfe.json` — 沪金期权 PCR 日频增量缓存 (磁盘永久保留全部历史)
 - `data/gold_pcr_gld.json` — 美国 GLD 期权 PCR 缓存 (best-effort, 逐日累积)
+- `data/rt_quotes.js` — 实时行情快照 (伦敦金/COMEX/上金T+D, Actions 生成)
+- `data/rt_charts.js` — 实时行情页日K历史数据 (Actions 生成)
+- `data/xau_ohlc.json` / `data/sge_ohlc.json` — 伦敦金 / 上金T+D 日K增量缓存
 - `data/gold_cot_disaggregated.csv` — 管理基金/生产商/掉期商分项持仓
 - `data/gold_cot_legacy.csv` — 商业/非商业传统分类持仓
 - `data/cache/` — CFTC 年度 zip 缓存

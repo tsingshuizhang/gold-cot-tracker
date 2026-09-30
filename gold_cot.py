@@ -564,11 +564,12 @@ def fetch_price_pairs(ticker: str, secid: str, weeks: int, name: str):
     return _fetch_pairs_yf(ticker, weeks, name)
 
 
-def _fetch_ohlc_eastmoney_range(beg: datetime, end: datetime):
+def _fetch_em_kline(secid: str, beg: datetime, end: datetime,
+                    name: str = ""):
     """东方财富日 K 线 -> [[日期, 开, 收, 高, 低], ...], 失败返回 None。"""
     try:
         url = ("https://push2his.eastmoney.com/api/qt/stock/kline/get"
-               "?secid=101.GC00Y&fields1=f1,f2,f3"
+               f"?secid={secid}&fields1=f1,f2,f3"
                "&fields2=f51,f52,f53,f54,f55"
                f"&klt=101&fqt=0&beg={beg:%Y%m%d}&end={end:%Y%m%d}")
         payload = json.loads(_download(url).decode("utf-8"))
@@ -580,8 +581,13 @@ def _fetch_ohlc_eastmoney_range(beg: datetime, end: datetime):
                          float(p[3]), float(p[4])])
         return rows or None
     except Exception as exc:  # noqa: BLE001
-        print(f"  [提示] 黄金 OHLC 东方财富源失败: {exc}")
+        print(f"  [提示] {name or secid} 东方财富K线失败: {exc}")
         return None
+
+
+def _fetch_ohlc_eastmoney_range(beg: datetime, end: datetime):
+    """东方财富日 K 线 -> [[日期, 开, 收, 高, 低], ...], 失败返回 None。"""
+    return _fetch_em_kline("101.GC00Y", beg, end, "黄金 OHLC")
 
 
 def _fetch_ohlc_yf_range(beg: datetime, end: datetime):
@@ -737,6 +743,129 @@ def write_rt_quotes(quotes: dict) -> None:
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "quotes": quotes,
     }, ensure_ascii=False) + ";\n", encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 实时行情页历史K线 (realtime.html 图表用)
+# ---------------------------------------------------------------------------
+
+XAU_OHLC_CACHE = DATA_DIR / "xau_ohlc.json"     # 伦敦金日K增量缓存
+SGE_OHLC_CACHE = DATA_DIR / "sge_ohlc.json"     # 上金T+D日K增量缓存
+
+
+def _load_ohlc_cache(path, cutoff: str):
+    if not path.exists():
+        return []
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    return [r for r in rows
+            if isinstance(r, list) and len(r) == 5 and r[0] >= cutoff]
+
+
+def _save_ohlc_cache(path, rows) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
+
+
+def _fetch_xau_ohlc_yahoo(beg: datetime, end: datetime):
+    """Yahoo chart API 抓 XAU/USD 日频 OHLC, 失败返回 None。"""
+    p1, p2 = beg.strftime("%Y-%m-%d"), (end + timedelta(days=1)).strftime("%Y-%m-%d")
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/XAUUSD=X"
+           f"?period1={int(beg.timestamp())}&period2={int((end + timedelta(days=1)).timestamp())}"
+           "&interval=1d")
+    try:
+        payload = json.loads(_download(url, timeout=20).decode("utf-8"))
+        result = (payload.get("chart") or {}).get("result") or []
+        if not result:
+            return None
+        ts = result[0].get("timestamp") or []
+        quote = (result[0].get("indicators") or {}).get("quote") or [{}]
+        q = quote[0]
+        rows = []
+        for i, t in enumerate(ts):
+            o, c = (q.get("open") or [None] * len(ts))[i], \
+                   (q.get("close") or [None] * len(ts))[i]
+            h, l = (q.get("high") or [None] * len(ts))[i], \
+                   (q.get("low") or [None] * len(ts))[i]
+            if o is None or c is None:
+                continue
+            rows.append([datetime.fromtimestamp(t).strftime("%Y-%m-%d"),
+                         round(float(o), 2), round(float(c), 2),
+                         round(float(h or c), 2), round(float(l or c), 2)])
+        return rows or None
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [提示] 伦敦金 Yahoo 源失败: {exc}")
+        return None
+
+
+def _scale_ohlc(rows: list[list], ratio: float) -> list[list]:
+    """按比例折算 OHLC (伦敦金兜底: 用 COMEX 形态 × 现货/期货比价)。"""
+    return [[r[0], round(r[1] * ratio, 2), round(r[2] * ratio, 2),
+             round(r[3] * ratio, 2), round(r[4] * ratio, 2)] for r in rows]
+
+
+def fetch_xau_ohlc(weeks: int, quotes: dict | None = None):
+    """伦敦金 XAU/USD 日K。优先 Yahoo; 失败用 COMEX 日K × 实时比价折算兜底。"""
+    cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
+              ).strftime("%Y-%m-%d")
+    cached = _load_ohlc_cache(XAU_OHLC_CACHE, cutoff)
+    last = cached[-1][0] if cached else None
+    beg = (datetime.strptime(last, "%Y-%m-%d") - timedelta(days=5)
+           if last else datetime.strptime(cutoff, "%Y-%m-%d"))
+    new_rows = _fetch_xau_ohlc_yahoo(beg, datetime.now()) or []
+    approx = False
+    if new_rows:
+        merged = {r[0]: r for r in cached}
+        for r in new_rows:
+            merged[r[0]] = r
+        rows = sorted(merged.values(), key=lambda r: r[0])
+        _save_ohlc_cache(XAU_OHLC_CACHE, rows)
+        return {"rows": rows, "approx": False}
+    # 兜底: COMEX 形态 × 现货/期货比价
+    gc_rows = _load_ohlc_cache(TA_OHLC_CACHE, cutoff)
+    xau_last = (quotes or {}).get("xau", {}).get("last")
+    gc_last = (quotes or {}).get("gc", {}).get("last")
+    ratio = (xau_last / gc_last) if xau_last and gc_last else 1.0
+    if gc_rows:
+        approx = True
+        rows = _scale_ohlc(gc_rows, ratio)
+        return {"rows": rows, "approx": True}
+    return {"rows": cached, "approx": False}
+
+
+def fetch_sge_ohlc(weeks: int):
+    """上海黄金 T+D 日K (东方财富 118.AUTD 增量)。"""
+    cutoff = (datetime.now() - timedelta(days=weeks * 7 + 10)
+              ).strftime("%Y-%m-%d")
+    cached = _load_ohlc_cache(SGE_OHLC_CACHE, cutoff)
+    last = cached[-1][0] if cached else None
+    beg = (datetime.strptime(last, "%Y-%m-%d") - timedelta(days=5)
+           if last else datetime.strptime(cutoff, "%Y-%m-%d"))
+    new_rows = _fetch_em_kline("118.AUTD", beg, datetime.now(), "上金T+D") or []
+    merged = {r[0]: r for r in cached}
+    for r in new_rows:
+        merged[r[0]] = r
+    rows = sorted(merged.values(), key=lambda r: r[0])
+    if rows:
+        _save_ohlc_cache(SGE_OHLC_CACHE, rows)
+    return {"rows": rows, "approx": False}
+
+
+def write_rt_charts(quotes: dict, weeks: int = 52) -> None:
+    """写出实时行情页图表数据 data/rt_charts.js。"""
+    gc_rows = _load_ohlc_cache(TA_OHLC_CACHE, (datetime.now() - timedelta(
+        days=weeks * 7 + 10)).strftime("%Y-%m-%d"))
+    charts = {
+        "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "xau": fetch_xau_ohlc(weeks, quotes),
+        "gc": {"rows": gc_rows, "approx": False},
+        "sge": fetch_sge_ohlc(weeks),
+    }
+    (DATA_DIR / "rt_charts.js").write_text(
+        "window.RT_CHARTS = " + json.dumps(charts, ensure_ascii=False) + ";\n",
+        encoding="utf-8")
 
 
 def fetch_gold_ohlc(weeks: int):
@@ -1251,6 +1380,7 @@ def build_ta_data(weeks: int) -> dict | None:
         return None
     quotes = fetch_rt_quotes()
     write_rt_quotes(quotes)
+    write_rt_charts(quotes, min(weeks, 52))
     return {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "ohlc": ohlc,
