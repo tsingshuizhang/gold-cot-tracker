@@ -30,6 +30,15 @@
   }
   .pagelink:hover { background: #e67e22; }
 
+  /* 三页统一的顶部导航胶囊 */
+  .navrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .navpill {
+    font-size: 13px; color: #fff; background: #f39c12; padding: 7px 16px;
+    border-radius: 6px; text-decoration: none; white-space: nowrap;
+  }
+  .navpill:hover { background: #e67e22; }
+  .navpill.active { background: #d35400; cursor: default; }
+
   .applink {
     font-size: 13px; color: #fff; background: #2980b9; padding: 7px 16px;
     border-radius: 6px; text-decoration: none; white-space: nowrap; margin-top: 2px;
@@ -78,7 +87,7 @@
     #chart { height: 1300px; }   /* JS 按面板舒适高度重算 */
     h1 { font-size: 18px; }
     .header { gap: 10px; }
-    .pagelink { padding: 6px 10px; font-size: 12px; }
+    .navpill { padding: 6px 10px; font-size: 12px; }
     .cards { gap: 8px; margin-bottom: 10px; }
     .card { min-width: calc(50% - 8px); padding: 10px 12px; }
     .card .value { font-size: 17px; }
@@ -109,8 +118,11 @@
       <h1>黄金 CFTC COT 持仓看板</h1>
       <div class="subtitle" id="subtitle">COMEX 黄金期货 · 数据来源: 美国 CFTC 官方</div>
     </div>
-    <a class="pagelink" href="realtime.html">实时行情</a>
-    <a class="pagelink" href="dashboard_ta.html">技术分析页 (K线 / 均线 / MACD) →</a>
+    <div class="navrow">
+      <span class="navpill active">持仓看板</span>
+      <a class="navpill" href="dashboard_ta.html">技术分析</a>
+      <a class="navpill" href="realtime.html">实时行情</a>
+    </div>
   </div>
 
   <div class="cards" id="cards"></div>
