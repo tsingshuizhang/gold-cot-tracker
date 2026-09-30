@@ -121,9 +121,12 @@
   <div id="chart"></div>
   <div id="zoomlabel"></div>
   <div class="note note-long">
-    本页数据独立于 COT 持仓页: 每 60 秒自动重载
-    <code>data/ta_data.js</code>, 也可点"刷新数据"手动重载;
-    行情增量更新(只补缺失日期, 不重抓历史)请运行 <code>./run.sh ta</code>。
+    本页数据与 COT 持仓页/实时行情页共享同一套数据源: 每 60 秒自动重载
+    <code>data/rt_charts.js</code>(K线主数据, 三页面统一) +
+    <code>data/rt_quotes.js</code>(实时报价主数据) +
+    <code>data/ta_data.js</code>(本页开采成本常量),
+    由 <code>gold_cot.py</code> 同一次运行生成, 保证各页面数据一致;
+    也可点"刷新数据"手动重载; 行情增量更新请运行 <code>./run.sh ta</code>。
     页面顶部<b>伦敦金 / COMEX 实时报价</b>来自新浪财经快照, 每 10 秒自动刷新;
     K线/均线/MACD 等仍基于日频收盘数据, 收盘后由 GitHub Actions 更新。<br>
     布林带 (20, 2); 均线 MA5/10/20/60/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
@@ -140,8 +143,10 @@
 </div>
 
 <script>
-// ============ 数据由 data/ta_data.js 提供: ============
-// window.TA_DATA = { updated, ohlc: [[日期,开,收,高,低],...], cost: [[年,AISC],...] }
+// ============ 数据文件 (统一数据源, 同一次 Actions 运行生成, 保证一致) ============
+// data/rt_charts.js  -> window.RT_CHARTS { updated, gc:{rows:[日K]}, xau:{...}, sge:{...} }  K线主数据
+// data/rt_quotes.js  -> window.RT_QUOTES  { updated, quotes:{xau,gc,sge} }                    实时报价主数据
+// data/ta_data.js    -> window.TA_DATA    { updated, cost:[[年,AISC],...] }                   本页常量(开采成本)
 // ======================================================
 
 const AUTO_REFRESH_SEC = 60;
@@ -652,34 +657,44 @@ function refreshSinaQuotes() {
 }
 
 // ---------------- 数据加载 / 自动刷新 ----------------
-// 用 <script> 标签加载本地数据文件: file:// 直开不受 CORS 限制
+// 统一数据源: K线主数据 rt_charts.js + 报价主数据 rt_quotes.js + 本页常量 ta_data.js,
+// 三者由 gold_cot.py 同一次运行生成, 不存在多份拷贝不一致的问题
 const elStatus = document.getElementById('updated');
 
-function loadData(manual) {
+function loadScript(url) {
+  return new Promise(resolve => {
+    const s = document.createElement('script');
+    s.src = url + '?t=' + Date.now();
+    s.onload = resolve; s.onerror = resolve;
+    document.head.appendChild(s);
+  });
+}
+
+async function loadData(manual) {
   if (manual) elStatus.textContent = '正在刷新数据...';
-  const s = document.createElement('script');
-  s.src = 'data/ta_data.js?t=' + Date.now();
-  s.onload = () => {
-    const ta = window.TA_DATA;
-    if (!ta || !ta.ohlc || !ta.ohlc.length) {
-      elStatus.textContent = '数据为空, 请先运行 ./run.sh ta 生成数据';
-      return;
-    }
-    if (ta.updated === lastUpdated && chartData) {
-      elStatus.textContent = '数据已是最新 (' + ta.updated + ') · 每 '
-          + AUTO_REFRESH_SEC + ' 秒自动检查';
-      return;
-    }
-    lastUpdated = ta.updated;
-    render(ta);
-    renderQuotes(ta.quotes || {});
-    elStatus.textContent = '数据更新于 ' + ta.updated + ' · 每 '
+  await Promise.all([
+    loadScript('data/rt_charts.js'),
+    loadScript('data/rt_quotes.js'),
+    loadScript('data/ta_data.js'),
+  ]);
+  const charts = window.RT_CHARTS;
+  const ohlc = charts && charts.gc && charts.gc.rows;
+  const ta = window.TA_DATA || {};
+  if (!ohlc || !ohlc.length) {
+    elStatus.textContent = 'K线主数据 (data/rt_charts.js) 为空, 请运行 ./run.sh ta 生成';
+    return;
+  }
+  const updated = (charts && charts.updated) || ta.updated || '';
+  if (updated === lastUpdated && chartData) {
+    elStatus.textContent = '数据已是最新 (' + updated + ') · 每 '
         + AUTO_REFRESH_SEC + ' 秒自动检查';
-  };
-  s.onerror = () => {
-    elStatus.textContent = '数据文件加载失败, 请先运行 ./run.sh ta 生成数据';
-  };
-  document.head.appendChild(s);
+    return;
+  }
+  lastUpdated = updated;
+  render({ ohlc: ohlc, cost: ta.cost || [] });
+  renderQuotes((window.RT_QUOTES && window.RT_QUOTES.quotes) || {});
+  elStatus.textContent = '数据更新于 ' + updated + ' · 每 '
+      + AUTO_REFRESH_SEC + ' 秒自动检查';
 }
 
 document.getElementById('refreshBtn')

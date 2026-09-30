@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-10-01（会话：realtime.html 增加 K线+MACD 实时图表）。
+> 零成本接续。最后更新：2026-10-01（会话：实时图加 MA100、三页面行情数据统一单源管理）。
 
 ## 一句话项目
 
@@ -43,6 +43,22 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
 - **美国 GLD 期权 PCR**：来自 Yahoo 期权链快照，经常限流/不可用，看板会自动隐藏。
 - 本地 `data/` 可能比线上旧（本地只在手动跑 `python gold_cot.py dashboard --weeks 520` 时更新），
   **线上以 Actions 提交为准**。本地 file:// 预览想刷新就手动跑该命令（依赖 `pip install yfinance curl_cffi`）。
+
+## 统一数据架构（三页面共用, 禁止分散维护）
+
+`gold_cot.py` **同一次运行**生成下列全部数据文件, 三页面只是消费方, 不存在多份拷贝:
+
+| 文件 | 内容 | 消费页面 |
+|---|---|---|
+| `data/rt_charts.js` (`window.RT_CHARTS`) | K线主数据: `gc`(COMEX真实) / `xau`(Yahoo优先,兜底折算) / `sge`(东财,兜底折算) | 技术分析页 + 实时行情页 |
+| `data/rt_quotes.js` (`window.RT_QUOTES`) | 实时报价主数据: xau / gc / sge 快照 | 技术分析页报价条 + 实时行情页 |
+| `data/ta_data.js` (`window.TA_DATA`) | 仅本页常量: 开采成本 AISC | 技术分析页 |
+| `data/cot_data.json` → 注入 `dashboard.html` | COT 持仓 + 价格线 + DXY + PCR (构建期嵌入) | COT 持仓页 |
+
+- 增量缓存: `ta_ohlc.json`(COMEX) / `xau_ohlc.json` / `sge_ohlc.json`, 互相独立补齐。
+- **改行情数据结构只改 `write_rt_charts/write_rt_quotes` 一处**, 两个消费页自动同步。
+- realtime.html 图表: 日K + MA5/10/20/60/100 (图例显示最新值, 可点按显隐) + MACD(12,26,9);
+  每 10 秒用实时报价合成"当日未收盘 bar"更新K线末端。
 
 ## GitHub Actions `update.yml` 维护
 

@@ -112,6 +112,8 @@ const COLORS = {
   up: '#e74c3c', down: '#27ae60',
   dif: '#e74c3c', dea: '#2980b9', macdUp: '#e74c3c', macdDn: '#27ae60',
   mark: '#f39c12',
+  ma5: '#e74c3c', ma10: '#f39c12', ma20: '#2980b9', ma60: '#27ae60',
+  ma100: '#8e44ad',
 };
 
 function fmt(n, digits) {
@@ -154,7 +156,7 @@ function displayRows(key) {
   return rows;
 }
 
-// ---------------- MACD ----------------
+// ---------------- MACD / MA ----------------
 function calcEMA(vals, n) {
   const k = 2 / (n + 1); const out = []; let e = null;
   for (let i = 0; i < vals.length; i++) {
@@ -168,6 +170,15 @@ function calcMACD(closes, fast = 12, slow = 26, sig = 9) {
   const dif = closes.map((_, i) => ef[i] - es[i]);
   const dea = calcEMA(dif, sig);
   return { dif, dea, hist: dif.map((d, i) => (d - dea[i]) * 2) };
+}
+function calcMA(closes, n) {
+  const out = []; let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= n) sum -= closes[i - n];
+    out.push(i >= n - 1 ? +(sum / n).toFixed(2) : null);
+  }
+  return out;
 }
 
 // ---------------- 渲染 K线 + MACD ----------------
@@ -191,6 +202,11 @@ function renderChart() {
   const kline = view.map(r => [r[1], r[2], r[3], r[4]]);  // 开 收 高 低 (ECharts candlestick 顺序)
   const closes = view.map(r => r[2]);
   const { dif, dea, hist } = calcMACD(closes);
+  const mas = {
+    'MA5': calcMA(closes, 5), 'MA10': calcMA(closes, 10),
+    'MA20': calcMA(closes, 20), 'MA60': calcMA(closes, 60),
+    'MA100': calcMA(closes, 100),
+  };
   const last = closes[closes.length - 1];
   const digits = INSTRUMENTS[currentKey].digits;
 
@@ -201,9 +217,22 @@ function renderChart() {
     `高 <b style="color:#c0392b">${fmt(lb[3], digits)}</b> 低 <b style="color:#27ae60">${fmt(lb[4], digits)}</b>`;
 
   const upColor = COLORS.up, downColor = COLORS.down;
+  const maSeries = Object.keys(mas).map(name => ({
+    name, type: 'line', data: mas[name], showSymbol: false, z: 3,
+    lineStyle: { width: 1.1, color: COLORS[name.toLowerCase()] },
+    itemStyle: { color: COLORS[name.toLowerCase()] },
+  }));
   chart.setOption({
     animation: false,
-    legend: { show: false },
+    legend: {
+      top: 0, left: 8, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10 },
+      data: Object.keys(mas),
+      formatter: name => {
+        const arr = mas[name];
+        const v = arr[arr.length - 1];
+        return v == null ? name : `${name} ${v.toFixed(1)}`;
+      },
+    },
     grid: [
       { left: 70, right: 20, top: 30, height: '58%' },
       { left: 70, right: 20, top: '72%', height: '18%' },
@@ -246,6 +275,7 @@ function renderChart() {
           data: [{ yAxis: last }],
         },
       },
+      ...maSeries,
       { name: 'DIF', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dif,
         showSymbol: false, lineStyle: { width: 1.2, color: COLORS.dif } },
       { name: 'DEA', type: 'line', xAxisIndex: 1, yAxisIndex: 1, data: dea,

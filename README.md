@@ -137,7 +137,17 @@ python gold_cot.py all                   # 一次全部执行
 - 显示最新价、涨跌额/涨跌幅、最高/最低/开盘/昨收、成交量/成交额
 - **K线 + MACD(12,26,9) 实时图表**: 点击卡片切换品种, 历史日K来自
   `data/rt_charts.js` (Actions 生成; 伦敦金历史优先 Yahoo XAUUSD=X,
-  不可得时按 COMEX 形态×实时比价折算并标注), 当前 bar 由实时报价每 10 秒合成更新
+  不可得时按 COMEX 形态×实时比价折算并标注), 当前 bar 由实时报价每 10 秒合成更新;
+  **均线 MA5/10/20/60/100** 图例显示最新值, 可点按显隐
+
+## 统一数据架构
+
+三个页面共享同一套行情数据, 由 `gold_cot.py` 同一次运行生成, 不会分散维护:
+
+- `data/rt_charts.js` — K线主数据 (技术分析页 + 实时行情页共用)
+- `data/rt_quotes.js` — 实时报价主数据 (技术分析页报价条 + 实时行情页共用)
+- `data/ta_data.js` — 仅技术分析页的开采成本常量
+- COT 持仓页的持仓/价格/DXY/PCR 在构建时由 `data/cot_data.json` 注入 `dashboard.html`
 
 ## iOS App (app/ 目录)
 

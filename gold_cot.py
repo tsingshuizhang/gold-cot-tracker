@@ -857,11 +857,20 @@ def write_rt_charts(quotes: dict, weeks: int = 52) -> None:
     """写出实时行情页图表数据 data/rt_charts.js。"""
     gc_rows = _load_ohlc_cache(TA_OHLC_CACHE, (datetime.now() - timedelta(
         days=weeks * 7 + 10)).strftime("%Y-%m-%d"))
+    gc_last_q = (quotes or {}).get("gc", {}).get("last")
+    xau = fetch_xau_ohlc(weeks, quotes)
+    sge = fetch_sge_ohlc(weeks)
+    # 兜底: 上金 T+D 历史抓不到时, COMEX 形态 × 上金/COMEX 实时比价折算
+    if not sge["rows"] and gc_rows:
+        sge_last_q = (quotes or {}).get("sge", {}).get("last")
+        ratio = (sge_last_q / gc_last_q) if sge_last_q and gc_last_q else None
+        if ratio:
+            sge = {"rows": _scale_ohlc(gc_rows, ratio), "approx": True}
     charts = {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "xau": fetch_xau_ohlc(weeks, quotes),
+        "xau": xau,
         "gc": {"rows": gc_rows, "approx": False},
-        "sge": fetch_sge_ohlc(weeks),
+        "sge": sge,
     }
     (DATA_DIR / "rt_charts.js").write_text(
         "window.RT_CHARTS = " + json.dumps(charts, ensure_ascii=False) + ";\n",
@@ -1374,7 +1383,11 @@ def fetch_dxy_pairs_incremental(weeks: int):
 
 
 def build_ta_data(weeks: int) -> dict | None:
-    """组装技术分析页数据 (OHLC 走增量缓存 + 开采成本常量 + 实时快照)。"""
+    """组装技术分析页数据。
+
+    统一数据源策略: K线主数据写 rt_charts.js, 实时报价写 rt_quotes.js,
+    本文件 (ta_data.js) 只保留本页常量 (开采成本), 三页面共享同一份行情数据。
+    """
     ohlc = fetch_gold_ohlc(weeks)
     if not ohlc:
         return None
@@ -1383,9 +1396,7 @@ def build_ta_data(weeks: int) -> dict | None:
     write_rt_charts(quotes, min(weeks, 52))
     return {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "ohlc": ohlc,
         "cost": MINING_COST_AISC,
-        "quotes": quotes,
     }
 
 
