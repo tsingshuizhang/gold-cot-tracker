@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-09-29（会话：COMEX 行情非实时/伦敦金实时报价、沪金 PCR 补更新、工作流失败诊断）。
+> 零成本接续。最后更新：2026-10-01（会话：修复 ta_data.js 未更新 Bug、COMEX 行情追平至 9/30）。
 
 ## 一句话项目
 
@@ -134,11 +134,14 @@ xcrun devicectl device install app --device <手机UDID> \
 ## 当前状态
 
 - 线上（GitHub Pages）：两页图表/手机端图例/区间标签/时间复位/离线 ECharts 全部正常；
-  **COT 卡片以 CFTC 报告日期 2026-09-22 为主**，副值显示发布日期 2026-09-25；
-  **技术分析页顶部新增伦敦金 XAU/USD + COMEX GC 实时报价条**（新浪快照，10 秒刷新），
-  作为日频 K线的补充；沪金 PCR 已手动补齐至 2026-09-29。
+  COT 卡片以 CFTC 报告日期 2026-09-22 为主；
+  技术分析页顶部实时报价条正常；COMEX 日频 K线已追平至 **2026-09-30**，
+  之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败。
 - App：源码已更新 COT 卡片文案；真机安装 2026-09-28 尝试失败（手机锁屏/忙，CoreDevice 4016），
   解锁亮屏后重试即可。
-- GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；根因待查（yfinance 限流/东财 IP）。
+- GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；
+  **2026-10-01 根因已定位：`gold_cot.py` 新增 `fetch_sina_quotes()` 时漏了 `import re`，
+  导致 `build_ta_data()` 抛 NameError，技术分析页 `ta_data.js` 写不出来，
+  所以页面 K线卡在 9/28；已补 `import re`。**
 - 待处理（用户新提）：`barchart.com/stocks` 52 周数据页面显示问题（需确认是哪个项目/页面）。
 - 待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）。
