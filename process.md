@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-10-01（会话：修复 ta_data.js 未更新 Bug、COMEX 行情追平至 9/30）。
+> 零成本接续。最后更新：2026-10-01（会话：新增贵金属实时行情页 realtime.html）。
 
 ## 一句话项目
 
@@ -33,6 +33,8 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
 - **COMEX 黄金行情 / 技术分析页 K线**：日频收盘数据；美股收盘后 Actions 更新。不是逐笔实时。
   页面顶部<b>伦敦金 XAU/USD 与 COMEX GC 实时报价</b>来自新浪财经快照，每 10 秒自动刷新，
   作为日频 K线的补充。
+- **上海黄金 T+D AUTD**：东方财富 `118.AUTD` 实时快照；因该源不支持跨域 JSONP，
+  浏览器实时页会优先尝试东方财富 JSONP，失败时回落到 Actions 生成的静态快照（`data/rt_quotes.js`）。
 - **沪金期权 PCR**：上期所官方日频，休市日不更新；国庆/春节等长假会断档数日。
 - **美国 GLD 期权 PCR**：来自 Yahoo 期权链快照，经常限流/不可用，看板会自动隐藏。
 - 本地 `data/` 可能比线上旧（本地只在手动跑 `python gold_cot.py dashboard --weeks 520` 时更新），
@@ -136,7 +138,8 @@ xcrun devicectl device install app --device <手机UDID> \
 - 线上（GitHub Pages）：两页图表/手机端图例/区间标签/时间复位/离线 ECharts 全部正常；
   COT 卡片以 CFTC 报告日期 2026-09-22 为主；
   技术分析页顶部实时报价条正常；COMEX 日频 K线已追平至 **2026-09-30**，
-  之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败。
+  之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败；
+  **新增 `realtime.html` 贵金属实时行情页**，展示伦敦金/COMEX/上金 T+D，每 10 秒刷新。
 - App：源码已更新 COT 卡片文案；真机安装 2026-09-28 尝试失败（手机锁屏/忙，CoreDevice 4016），
   解锁亮屏后重试即可。
 - GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；

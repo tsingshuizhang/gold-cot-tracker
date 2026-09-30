@@ -7,6 +7,8 @@
 **在线网站(自动更新): <https://tsingshuizhang.github.io/gold-cot-tracker/dashboard.html>**
 由 GitHub Actions 每天定时抓取数据并发布, 无需手动操作;
 技术分析页在网站上每 60 秒自动重载最新行情数据。
+新增 **实时行情页**: <https://tsingshuizhang.github.io/gold-cot-tracker/realtime.html>，
+展示伦敦金、COMEX 黄金、上海黄金 T+D 的实时快照，每 10 秒刷新。
 
 ## 数据来源
 
@@ -19,7 +21,8 @@
 - 黄金合约: `GOLD - COMMODITY EXCHANGE INC.`, CFTC 市场代码 `088691`
 - 金价/美元指数: 东方财富 API 优先(黄金 `101.GC00Y`, 美元指数 `100.UDI`),
   Yahoo Finance (`GC=F` / `DX-Y.NYB`) 备用; 技术分析页顶部实时报价额外使用新浪财经
-  (`hf_XAU` 伦敦金现货、`hf_GC` COMEX 黄金期货) 每 10 秒刷新
+  (`hf_XAU` 伦敦金现货、`hf_GC` COMEX 黄金期货) 每 10 秒刷新;
+  **上海黄金 T+D AUTD** 实时行情使用东方财富 `118.AUTD`
 - **黄金期权 PCR**: 上期所沪金期权官方日行情
   (`shfe.com.cn/data/tradedata/option/dailydata/kx{日期}.dat`), 主源;
   单线程顺序增量抓取 (并发高频请求会触发源站限流),
@@ -78,9 +81,10 @@ python gold_cot.py ta --weeks 520        # 只刷新技术分析页行情 (增�
 python gold_cot.py all                   # 一次全部执行
 ```
 
-## 交互看板 (dashboard.html + dashboard_ta.html)
+## 交互看板 (dashboard.html + dashboard_ta.html + realtime.html)
 
-`python gold_cot.py dashboard` 一次生成两个可互相跳转的页面, 数据互相独立:
+`python gold_cot.py dashboard` 一次生成持仓/技术分析两个可互相跳转的页面, 数据互相独立;
+`realtime.html` 为新增的实时行情页, 展示伦敦金 / COMEX 黄金 / 上海黄金 T+D 的实时快照。
 
 **持仓页 `dashboard.html`** (数据内嵌, 无需服务器):
 
@@ -123,6 +127,14 @@ python gold_cot.py all                   # 一次全部执行
 - 行情数据增量更新: `python gold_cot.py ta` (或 `./run.sh ta`) 只补齐
   缓存中缺失的日期, **已有历史数据绝不重复抓取**
   (缓存 `data/ta_ohlc.json`, 已覆盖到当天时直接跳过网络请求)
+
+**实时行情页 `realtime.html`**:
+
+- 伦敦金 XAU/USD (新浪 `hf_XAU`)、COMEX 黄金 GC (新浪 `hf_GC`)、
+  上海黄金 T+D AUTD (东方财富 `118.AUTD`) 三品种实时快照
+- 每 **10 秒**自动刷新; 优先浏览器直接拉取新浪/东方财富实时接口,
+  失败时回落到 Actions 生成的 `data/rt_quotes.js` 静态快照
+- 显示最新价、涨跌额/涨跌幅、最高/最低/开盘/昨收、成交量/成交额
 
 ## iOS App (app/ 目录)
 

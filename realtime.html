@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="黄金实时行情">
+<link rel="apple-touch-icon" href="app-icon.png">
+<title>贵金属实时行情 | 黄金 CFTC COT</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: auto; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f6fa; color: #2c3e50; padding: 20px;
+  }
+  .container { width: 100%; max-width: 960px; margin: 0 auto; }
+  .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 22px; }
+  .navlink { font-size: 13px; color: #2980b9; text-decoration: none; white-space: nowrap; }
+  .navlink:hover { text-decoration: underline; }
+  .status { margin-left: auto; font-size: 12px; color: #95a5a6; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .card {
+    background: #fff; border-radius: 12px; padding: 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .card .name { font-size: 14px; color: #7f8c8d; margin-bottom: 4px; }
+  .card .symbol { font-size: 11px; color: #95a5a6; margin-bottom: 10px; }
+  .card .price { font-size: 32px; font-weight: 600; margin-bottom: 6px; }
+  .card .change { font-size: 14px; margin-bottom: 14px; }
+  .card .details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; font-size: 12px; color: #555; }
+  .card .details .label { color: #95a5a6; }
+  .card .time { margin-top: 12px; font-size: 11px; color: #95a5a6; text-align: right; }
+  .up { color: #c0392b; }
+  .down { color: #27ae60; }
+  .gray { color: #95a5a6; }
+
+  .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .btn {
+    border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
+    padding: 7px 16px; font-size: 13px; cursor: pointer; color: #2c3e50;
+  }
+  .btn:hover { border-color: #f39c12; color: #f39c12; }
+
+  .note { font-size: 12px; color: #95a5a6; line-height: 1.7; }
+
+  @media (max-width: 768px) {
+    body { padding: 12px; }
+    h1 { font-size: 18px; }
+    .card .price { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>贵金属实时行情</h1>
+    <a class="navlink" href="dashboard.html">← COT 持仓看板</a>
+    <a class="navlink" href="dashboard_ta.html">技术分析页 →</a>
+    <span class="status" id="status">加载中...</span>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn" id="refreshBtn">立即刷新</button>
+    <span class="note">每 10 秒自动刷新; 伦敦金/COMEX 来自新浪财经, 上金 T+D 来自东方财富。</span>
+  </div>
+
+  <div class="cards" id="cards">
+    <div class="card"><div class="name">伦敦金 XAU/USD</div><div class="symbol">新浪 hf_XAU</div><div class="price gray">--</div></div>
+    <div class="card"><div class="name">COMEX 黄金 GC</div><div class="symbol">新浪 hf_GC</div><div class="price gray">--</div></div>
+    <div class="card"><div class="name">上海黄金 T+D AUTD</div><div class="symbol">东方财富 118.AUTD</div><div class="price gray">--</div></div>
+  </div>
+</div>
+
+<script>
+const AUTO_REFRESH_SEC = 10;
+const cards = document.getElementById('cards');
+const statusEl = document.getElementById('status');
+
+// 格式化数字
+function fmt(n, digits) {
+  if (n == null || isNaN(n)) return '--';
+  return n.toLocaleString('en-US', {
+    minimumFractionDigits: digits, maximumFractionDigits: digits
+  });
+}
+
+function renderCard(key, q) {
+  const colorClass = (q.change == null) ? 'gray' : (q.change >= 0 ? 'up' : 'down');
+  const sign = (q.change == null) ? '' : (q.change >= 0 ? '+' : '');
+  const changeText = (q.change == null) ? '--'
+    : `${sign}${fmt(q.change, 2)} (${sign}${fmt(q.change_pct, 2)}%)`;
+  const unit = key === 'sge' ? '元/克' : '美元/盎司';
+  return `
+    <div class="card">
+      <div class="name">${q.name || '-'}</div>
+      <div class="symbol">${q.symbol || key}</div>
+      <div class="price ${colorClass}">${fmt(q.last, 2)}</div>
+      <div class="change ${colorClass}">${changeText} <span style="color:#95a5a6">${unit}</span></div>
+      <div class="details">
+        <div><span class="label">最高</span> ${fmt(q.high, 2)}</div>
+        <div><span class="label">最低</span> ${fmt(q.low, 2)}</div>
+        <div><span class="label">开盘</span> ${fmt(q.open, 2)}</div>
+        <div><span class="label">昨收</span> ${fmt(q.prev_close, 2)}</div>
+        ${q.volume != null ? `<div><span class="label">成交量</span> ${q.volume.toLocaleString()}</div>` : ''}
+      </div>
+      <div class="time">快照 ${q.date || '-'} ${q.time || '-'} · 每 ${AUTO_REFRESH_SEC} 秒刷新</div>
+    </div>`;
+}
+
+function renderAll(q) {
+  const order = ['xau', 'gc', 'sge'];
+  cards.innerHTML = order.map(k => q[k] ? renderCard(k, q[k])
+    : `<div class="card"><div class="name">${k.toUpperCase()}</div><div class="price gray">--</div><div class="time">暂无可用的实时数据</div></div>`).join('');
+}
+
+function updateStatus(text) {
+  statusEl.textContent = text;
+}
+
+// ---------------- 静态快照 (Actions 生成) ----------------
+function loadStatic() {
+  const s = document.createElement('script');
+  s.src = 'data/rt_quotes.js?t=' + Date.now();
+  s.onload = () => {
+    const d = window.RT_QUOTES;
+    if (d && d.quotes) {
+      renderAll(d.quotes);
+      updateStatus('静态快照 ' + d.updated + ' · 正在尝试实时刷新...');
+    }
+  };
+  s.onerror = () => updateStatus('静态快照加载失败');
+  document.head.appendChild(s);
+}
+
+// ---------------- 新浪实时行情 JSONP ----------------
+function parseSinaQuote(code, body, name) {
+  const p = body.split(',');
+  if (p.length < 14) return null;
+  const last = parseFloat(p[3]);
+  const high = parseFloat(p[4]);
+  const low = parseFloat(p[5]);
+  const prev_close = parseFloat(p[7] || p[1]) || null;
+  const open = parseFloat(p[8]) || null;
+  const change = prev_close ? last - prev_close : null;
+  const change_pct = prev_close ? change / prev_close * 100 : null;
+  return {
+    symbol: code, name: name, last: last, high: high, low: low,
+    open: open, prev_close: prev_close,
+    change: change ? +change.toFixed(2) : null,
+    change_pct: change_pct ? +change_pct.toFixed(2) : null,
+    time: p[6], date: new Date().toISOString().slice(0, 10)
+  };
+}
+
+function refreshSina() {
+  const s = document.createElement('script');
+  s.src = 'https://hq.sinajs.cn/list=hf_XAU,hf_GC&t=' + Date.now();
+  s.onload = () => {
+    const q = window.liveQuotes || {};
+    if (window.hq_str_hf_XAU)
+      q.xau = parseSinaQuote('hf_XAU', window.hq_str_hf_XAU, '伦敦金 XAU/USD');
+    if (window.hq_str_hf_GC)
+      q.gc = parseSinaQuote('hf_GC', window.hq_str_hf_GC, 'COMEX 黄金 GC');
+    window.liveQuotes = q;
+    renderAll(q);
+    updateStatus('新浪实时已更新 · ' + new Date().toLocaleTimeString('zh-CN'));
+    // 新浪更新完再单独拉东方财富(避免互相覆盖)
+    refreshEastmoney();
+  };
+  s.onerror = () => updateStatus('新浪实时行情失败, 显示静态快照');
+  document.head.appendChild(s);
+}
+
+// ---------------- 东方财富实时行情 JSONP (上海黄金 T+D) ----------------
+function emCallback(payload) {
+  const data = (payload && payload.data) || {};
+  const scale = 100.0;  // AUTD 字段放大 100 倍
+  function fv(key) {
+    const v = data[key];
+    return v != null ? parseFloat(v) / scale : null;
+  }
+  const last = fv('f43'), high = fv('f44'), low = fv('f45'), open = fv('f46');
+  const prev_close = fv('f60');
+  const change = (last != null && prev_close != null) ? last - prev_close : null;
+  const change_pct = (change && prev_close) ? change / prev_close * 100 : null;
+  const q = window.liveQuotes || {};
+  q.sge = {
+    symbol: '118.AUTD',
+    name: '上海黄金 T+D AUTD',
+    last: last, high: high, low: low, open: open, prev_close: prev_close,
+    volume: data['f47'], amount: data['f48'],
+    change: change != null ? +change.toFixed(2) : null,
+    change_pct: change_pct != null ? +change_pct.toFixed(2) : null,
+    time: new Date().toLocaleTimeString('zh-CN'),
+    date: new Date().toISOString().slice(0, 10)
+  };
+  window.liveQuotes = q;
+  renderAll(q);
+  updateStatus('实时行情已更新 · ' + new Date().toLocaleTimeString('zh-CN'));
+}
+
+function refreshEastmoney() {
+  const fields = 'f43,f44,f45,f46,f47,f48,f57,f58,f60,f107';
+  const s = document.createElement('script');
+  s.src = 'https://push2.eastmoney.com/api/qt/stock/get?secid=118.AUTD&fields=' + fields
+        + '&cb=emCallback&t=' + Date.now();
+  s.onerror = () => {
+    // 东方财富失败时, 如果新浪有数据, 至少保留新浪两条
+    if (window.liveQuotes) renderAll(window.liveQuotes);
+    updateStatus('东方财富(上金T+D)实时失败, 显示其他来源');
+  };
+  document.head.appendChild(s);
+}
+
+// ---------------- 初始化 ----------------
+window.liveQuotes = {};
+document.getElementById('refreshBtn').addEventListener('click', refreshSina);
+loadStatic();
+refreshSina();
+setInterval(refreshSina, AUTO_REFRESH_SEC * 1000);
+</script>
+</body>
+</html>

@@ -676,6 +676,69 @@ def fetch_sina_quotes() -> dict:
     return out
 
 
+def fetch_eastmoney_quote(secid: str, name: str, scale: float = 1.0) -> dict | None:
+    """从东方财富抓取单个品种实时快照。
+
+    secid: 如 '118.AUTD'(上海黄金 T+D)
+    scale: 字段放大了多少倍, 返回时除以 scale
+    字段: last, high, low, open, prev_close, change, change_pct, volume, amount, time, date。
+    """
+    fields = "f43,f44,f45,f46,f47,f48,f57,f58,f60,f107"
+    url = f"https://push2.eastmoney.com/api/qt/stock/get?secid={secid}&fields={fields}"
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [提示] 东方财富 {secid} 实时行情抓取失败: {exc}")
+        return None
+    data = (payload.get("data") or {}) if isinstance(payload, dict) else {}
+    if not data:
+        return None
+    def fv(key):
+        v = data.get(key)
+        return float(v) / scale if v is not None else None
+    last, high, low, open_price = fv("f43"), fv("f44"), fv("f45"), fv("f46")
+    volume = data.get("f47")          # 成交量(原始整数)
+    amount = data.get("f48")          # 成交额(原始整数)
+    prev_close = fv("f60")
+    change = (last - prev_close) if last is not None and prev_close is not None else None
+    change_pct = (change / prev_close * 100) if change and prev_close else None
+    return {
+        "symbol": secid,
+        "name": name,
+        "last": last,
+        "high": high,
+        "low": low,
+        "open": open_price,
+        "prev_close": prev_close,
+        "volume": volume,
+        "amount": amount,
+        "change": round(change, 2) if change is not None else None,
+        "change_pct": round(change_pct, 2) if change_pct is not None else None,
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "date": datetime.now().strftime("%Y-%m-%d"),
+    }
+
+
+def fetch_rt_quotes() -> dict:
+    """聚合实时行情: 伦敦金、COMEX黄金、上海黄金T+D。"""
+    quotes = fetch_sina_quotes()
+    sge = fetch_eastmoney_quote("118.AUTD", "上海黄金 T+D AUTD", scale=100.0)
+    if sge:
+        quotes["sge"] = sge
+    return quotes
+
+
+def write_rt_quotes(quotes: dict) -> None:
+    """写出实时行情快照 data/rt_quotes.js (可被 <script> 直接加载)。"""
+    RT_QUOTES = DATA_DIR / "rt_quotes.js"
+    RT_QUOTES.write_text("window.RT_QUOTES = " + json.dumps({
+        "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "quotes": quotes,
+    }, ensure_ascii=False) + ";\n", encoding="utf-8")
+
+
 def fetch_gold_ohlc(weeks: int):
     """COMEX 黄金日频 OHLC -> [[日期, 开, 收, 高, 低], ...], 失败返回 None。
 
@@ -1182,11 +1245,12 @@ def fetch_dxy_pairs_incremental(weeks: int):
 
 
 def build_ta_data(weeks: int) -> dict | None:
-    """组装技术分析页数据 (OHLC 走增量缓存 + 开采成本常量 + 新浪实时快照)。"""
+    """组装技术分析页数据 (OHLC 走增量缓存 + 开采成本常量 + 实时快照)。"""
     ohlc = fetch_gold_ohlc(weeks)
     if not ohlc:
         return None
-    quotes = fetch_sina_quotes()
+    quotes = fetch_rt_quotes()
+    write_rt_quotes(quotes)
     return {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "ohlc": ohlc,
