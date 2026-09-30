@@ -160,8 +160,14 @@ xcrun devicectl device install app --device <手机UDID> \
   技术分析页顶部实时报价条正常；COMEX 日频 K线已追平至 **2026-09-30**，
   之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败；
   **新增 `realtime.html` 贵金属实时行情页**，展示伦敦金/COMEX/上金 T+D，每 10 秒刷新。
-- App：源码已更新 COT 卡片文案；真机安装 2026-09-28 尝试失败（手机锁屏/忙，CoreDevice 4016），
-  解锁亮屏后重试即可。
+- App：真机版停在 2026-09-27 构建（10/4 到期需重装）；
+  **⚠️ 2026-10-01 数据统一后 `ta_data.js` 只剩 {updated,cost}，App 的 `DataStore.parseTa` 读不到 ohlc，
+  下次打开 App 联网刷新后 TA 页会变空白（不会崩，防御性解析返回空数组）**。
+  **明日优先任务（用户已约）：App 同步改造 + 重装**：
+  1. DataStore 改读 `rt_charts.js`(gc ohlc) + `rt_quotes.js`(xau/gc/sge 报价) + `ta_data.js`(cost)
+  2. Dashboard 卡片加"发布日期"文案（源码已改好，旧包没有）
+  3. TA 图表加 MA100；可选：加实时报价条
+  4. 真机重装（需用户解锁 iPhone 保持亮屏，上次 CoreDevice 4016 就是锁屏导致）
 - GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；
   **2026-10-01 根因已定位：`gold_cot.py` 新增 `fetch_sina_quotes()` 时漏了 `import re`，
   导致 `build_ta_data()` 抛 NameError，技术分析页 `ta_data.js` 写不出来，
