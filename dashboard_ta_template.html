@@ -129,7 +129,7 @@
     也可点"刷新数据"手动重载; 行情增量更新请运行 <code>./run.sh ta</code>。
     页面顶部<b>伦敦金 / COMEX 实时报价</b>来自新浪财经快照, 每 10 秒自动刷新;
     K线/均线/MACD 等仍基于日频收盘数据, 收盘后由 GitHub Actions 更新。<br>
-    布林带 (20, 2); 均线 MA5/10/20/60/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
+    布林带 (20, 2); 均线 MA5/10/20/60/100/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
     K线周期可切换 日K/周K/月K (周期聚合: 开=首, 收=末, 高=最高, 低=最低);
     金叉/死叉/顶背离/底背离 标注规则见 README.md。
     平均开采成本为行业 AISC 年度估算值(美元/盎司), 比值 = 金价 ÷ AISC;
@@ -173,7 +173,7 @@ const COLORS = {
   bollUp: '#2980b9', bollMid: '#34495e', bollDn: '#2980b9',
   fib: '#8e44ad',                           // 斐波那契: 紫色虚线, 与布林带明显区分
   ma5: '#e74c3c', ma10: '#f39c12', ma20: '#2980b9',
-  ma60: '#27ae60', ma120: '#9b59b6', ma250: '#7f8c8d',
+  ma60: '#27ae60', ma100: '#8e44ad', ma120: '#9b59b6', ma250: '#7f8c8d',
   gold: '#f39c12', cost: '#16a085', ratio: '#c0392b',
   dif: '#e74c3c', dea: '#2980b9',
 };
@@ -388,7 +388,8 @@ function render(ta) {
 
   // 均线
   const maDefs = [[5, COLORS.ma5], [10, COLORS.ma10], [20, COLORS.ma20],
-                  [60, COLORS.ma60], [120, COLORS.ma120], [250, COLORS.ma250]];
+                  [60, COLORS.ma60], [100, COLORS.ma100],
+                  [120, COLORS.ma120], [250, COLORS.ma250]];
   const maSeries = maDefs.map(([n, color]) => ({
     name: 'MA' + n, type: 'line', xAxisIndex: 1, yAxisIndex: 1,
     data: pair(calcMA(closes, n)), showSymbol: false, connectNulls: false,
