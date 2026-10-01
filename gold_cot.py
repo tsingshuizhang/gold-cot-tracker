@@ -778,10 +778,24 @@ def _fetch_em_quotes_ulist() -> dict:
     return out
 
 
+def _load_prev_quotes() -> dict:
+    """读取上一份 rt_quotes.js 快照 (休市/源失败时兜底, 防止卡片消失)。"""
+    path = DATA_DIR / "rt_quotes.js"
+    if not path.exists():
+        return {}
+    try:
+        text = path.read_text(encoding="utf-8")
+        blob = json.loads(text.split("=", 1)[1].strip().rstrip(";"))
+        return blob.get("quotes") or {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def fetch_rt_quotes() -> dict:
     """聚合实时行情: 伦敦金、COMEX黄金、上海黄金T+D。
 
-    主源新浪; 任一品种缺失时用东方财富 ulist 兜底补齐。
+    主源新浪; 任一品种缺失时用东方财富 ulist 兜底补齐;
+    仍缺失(如国庆休市东财返回0)时沿用上一份快照并标 stale, 保证三卡片始终齐全。
     """
     quotes = fetch_sina_quotes()
     missing = {"xau", "gc", "sge"} - set(quotes)
@@ -792,8 +806,17 @@ def fetch_rt_quotes() -> dict:
                 quotes[k] = em[k]
     if not quotes.get("sge"):
         sge = fetch_eastmoney_quote("118.AUTD", "上海黄金 T+D AUTD", scale=100.0)
-        if sge:
+        if sge and sge.get("last") is not None:
             quotes["sge"] = sge
+    # 休市/源失败兜底: 任一品种无有效最新价时用旧快照顶替
+    prev = _load_prev_quotes()
+    for key in ("xau", "gc", "sge"):
+        q = quotes.get(key)
+        if (not q or q.get("last") is None) and prev.get(key) \
+                and prev[key].get("last") is not None:
+            old = dict(prev[key])
+            old["stale"] = True
+            quotes[key] = old
     return quotes
 
 

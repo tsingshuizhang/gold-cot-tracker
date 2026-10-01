@@ -84,7 +84,12 @@ struct DashboardView: View {
             HStack(spacing: 10) {
                 ForEach(store.quotes) { q in
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(q.name).font(.caption2).foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Text(q.name).font(.caption2).foregroundStyle(.secondary)
+                            if q.stale {
+                                Text("休市").font(.caption2).foregroundStyle(.orange)
+                            }
+                        }
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(q.last != nil ? String(format: "%.2f", q.last!) : "--")
                                 .font(.headline).monospacedDigit()

@@ -249,7 +249,8 @@ final class DataStore: ObservableObject {
                 last: d["last"] as? Double,
                 change: d["change"] as? Double,
                 changePct: d["change_pct"] as? Double,
-                time: d["time"] as? String ?? ""
+                time: d["time"] as? String ?? "",
+                stale: d["stale"] as? Bool ?? false
             )
         }
     }
@@ -296,7 +297,7 @@ final class DataStore: ObservableObject {
             let pct = (item["f3"] as? Double).map(r2).flatMap { $0 == 0 ? nil : $0 }
             merged[key] = RtQuote(key: key, name: names[key] ?? key,
                                   last: last, change: change, changePct: pct,
-                                  time: time)
+                                  time: time, stale: false)
         }
         let order = ["xau", "gc", "sge"]
         quotes = order.compactMap { merged[$0] }

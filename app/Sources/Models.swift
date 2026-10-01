@@ -55,6 +55,7 @@ struct RtQuote: Identifiable {
     let change: Double?
     let changePct: Double?
     let time: String
+    let stale: Bool          // true = 休市/源失败, 沿用了上一份快照
 }
 
 // MARK: - 日期工具

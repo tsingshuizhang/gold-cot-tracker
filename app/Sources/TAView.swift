@@ -220,10 +220,16 @@ struct RealtimeView: View {
             ForEach(store.quotes) { q in
                 Button {
                     selected = q.key
-                } label: {
+                }                 label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(names[q.key] ?? q.name).font(.caption2)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 4) {
+                            Text(names[q.key] ?? q.name).font(.caption2)
+                                .foregroundStyle(.secondary)
+                            if q.stale {
+                                Text("休市").font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(q.last != nil ? String(format: "%.2f", q.last!) : "--")
                                 .font(.headline).monospacedDigit()
