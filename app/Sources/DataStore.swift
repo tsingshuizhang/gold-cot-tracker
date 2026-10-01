@@ -10,6 +10,7 @@ final class DataStore: ObservableObject {
 
     @Published var cot = CotPayload()
     @Published var ta = TaPayload()
+    @Published var quotes: [RtQuote] = []   // 实时行情 (rt_quotes.js)
     @Published var loading = false
     @Published var errorMessage: String?
 
@@ -60,15 +61,38 @@ final class DataStore: ObservableObject {
         }
         do {
             let data = try await Self.get("\(Self.base)/data/ta_data.js")
-            self.ta = try parseTa(data)
+            let p = try parseTa(data)
+            // ta_data.js 统一数据源后只含 {updated, cost}; ohlc 走 rt_charts.js 主数据
+            self.ta.cost = p.cost
+            if !p.ohlc.isEmpty && self.ta.ohlc.isEmpty { self.ta.ohlc = p.ohlc }
             saveCache(data, name: "ta_data.js")
-            dbg.log("ta ok: \(self.ta.ohlc.count)")
+            dbg.log("ta cost ok: \(self.ta.cost.count)")
         }
         catch {
             dbg.log("ta fail: \(error.localizedDescription)")
             if errorMessage == nil {
                 errorMessage = "行情数据加载失败: \(error.localizedDescription)"
             }
+        }
+        do {
+            let data = try await Self.get("\(Self.base)/data/rt_charts.js")
+            let rows = try parseRtCharts(data)
+            if !rows.isEmpty { self.ta.ohlc = rows }
+            saveCache(data, name: "rt_charts.js")
+            dbg.log("rt charts ok: \(rows.count)")
+        }
+        catch {
+            dbg.log("rt charts fail: \(error.localizedDescription)")
+        }
+        do {
+            let data = try await Self.get("\(Self.base)/data/rt_quotes.js")
+            let q = try parseRtQuotes(data)
+            if !q.isEmpty { self.quotes = q }
+            saveCache(data, name: "rt_quotes.js")
+            dbg.log("rt quotes ok: \(q.count)")
+        }
+        catch {
+            dbg.log("rt quotes fail: \(error.localizedDescription)")
         }
         loading = false
         dbg.log("refresh done")
@@ -88,10 +112,21 @@ final class DataStore: ObservableObject {
             cot = p
             dbg.log("cot cache: \(p.cot.count)")
         }
+        // K线主数据 (统一数据源后 ohlc 在 rt_charts.js, ta_data.js 只剩成本)
+        if let d = try? Data(contentsOf: Self.cacheURL("rt_charts.js")),
+           let rows = try? parseRtCharts(d), !rows.isEmpty {
+            ta.ohlc = rows
+            dbg.log("rt charts cache: \(rows.count)")
+        }
         if let d = try? Data(contentsOf: Self.cacheURL("ta_data.js")),
-           let p = try? parseTa(d), !p.ohlc.isEmpty {
-            ta = p
-            dbg.log("ta cache: \(p.ohlc.count)")
+           let p = try? parseTa(d) {
+            ta.cost = p.cost
+            // 旧版 ta_data.js 缓存里还有 ohlc 时兜底用
+            if ta.ohlc.isEmpty && !p.ohlc.isEmpty { ta.ohlc = p.ohlc }
+        }
+        if let d = try? Data(contentsOf: Self.cacheURL("rt_quotes.js")),
+           let q = try? parseRtQuotes(d), !q.isEmpty {
+            quotes = q
         }
     }
 
@@ -165,6 +200,48 @@ final class DataStore: ObservableObject {
             }.sorted { $0.year < $1.year }
         }
         return p
+    }
+
+    /// 解析 "window.XXX = {...};" 形式的 JS 赋值文件, 返回 JSON 字典
+    private func parseJsAssignment(_ data: Data) throws -> [String: Any] {
+        var text = String(decoding: data, as: UTF8.self)
+        if let range = text.range(of: "=") {
+            text = String(text[range.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if text.hasSuffix(";") { text.removeLast() }
+        return try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] ?? [:]
+    }
+
+    /// rt_charts.js: K线主数据, 取 gc.rows [[日期,开,收,高,低],...]
+    private func parseRtCharts(_ data: Data) throws -> [Ohlc] {
+        let raw = try parseJsAssignment(data)
+        guard let gc = raw["gc"] as? [String: Any],
+              let rows = gc["rows"] as? [[Any]] else { return [] }
+        return rows.compactMap { r in
+            guard r.count >= 5, let d = DateUtil.parse(r[0] as? String ?? ""),
+                  let o = r[1] as? Double, let c = r[2] as? Double,
+                  let h = r[3] as? Double, let l = r[4] as? Double
+            else { return nil }
+            return Ohlc(date: d, open: o, close: c, high: h, low: l)
+        }.sorted { $0.date < $1.date }
+    }
+
+    /// rt_quotes.js: 实时报价 { xau: {...}, gc: {...}, sge: {...} }
+    private func parseRtQuotes(_ data: Data) throws -> [RtQuote] {
+        let raw = try parseJsAssignment(data)
+        guard let qs = raw["quotes"] as? [String: Any] else { return [] }
+        let order = ["xau", "gc", "sge"]   // 固定顺序展示
+        return order.compactMap { key in
+            guard let d = qs[key] as? [String: Any] else { return nil }
+            return RtQuote(
+                key: key,
+                name: d["name"] as? String ?? key,
+                last: d["last"] as? Double,
+                change: d["change"] as? Double,
+                changePct: d["change_pct"] as? Double,
+                time: d["time"] as? String ?? ""
+            )
+        }
     }
 
     private func parsePairs(_ any: Any?) -> [PricePoint] {

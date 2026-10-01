@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-10-01（会话：实时图加 MA100、三页面行情数据统一单源管理）。
+> 零成本接续。最后更新：2026-10-01（会话：浏览器实时源切东财 JSONP、App 同步改造+真机重装）。
 
 ## 一句话项目
 
@@ -59,6 +59,12 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
 - **改行情数据结构只改 `write_rt_charts/write_rt_quotes` 一处**, 两个消费页自动同步。
 - realtime.html 图表: 日K + MA5/10/20/60/100 (图例显示最新值, 可点按显隐) + MACD(12,26,9);
   每 10 秒用实时报价合成"当日未收盘 bar"更新K线末端。
+
+- **浏览器端实时行情源**: 新浪 `hq.sinajs.cn` 校验 Referer(只允许 *.sina.com.cn),
+  跨域 `<script>` 引用一律 403 —— **浏览器端必须用东方财富 ulist JSONP**
+  (`push2.eastmoney.com/api/qt/ulist.np/get?secids=122.XAU,101.GC00Y,118.AUTD&fields=f2,f3,f4,f12,f14,f15,f16,f17,f18&cb=回调名`,
+  f2=最新价 f3=涨跌幅% f4=涨跌额 f15=最高 f16=最低 f17=今开 f18=昨收; 部分字段原值放大100倍需归一)。
+  服务端 (gold_cot.py) 仍用新浪 urllib(带 Referer 头) + 东财 ulist 兜底。
 
 ## GitHub Actions `update.yml` 维护
 
@@ -160,14 +166,11 @@ xcrun devicectl device install app --device <手机UDID> \
   技术分析页顶部实时报价条正常；COMEX 日频 K线已追平至 **2026-09-30**，
   之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败；
   **新增 `realtime.html` 贵金属实时行情页**，展示伦敦金/COMEX/上金 T+D，每 10 秒刷新。
-- App：真机版停在 2026-09-27 构建（10/4 到期需重装）；
-  **⚠️ 2026-10-01 数据统一后 `ta_data.js` 只剩 {updated,cost}，App 的 `DataStore.parseTa` 读不到 ohlc，
-  下次打开 App 联网刷新后 TA 页会变空白（不会崩，防御性解析返回空数组）**。
-  **明日优先任务（用户已约）：App 同步改造 + 重装**：
-  1. DataStore 改读 `rt_charts.js`(gc ohlc) + `rt_quotes.js`(xau/gc/sge 报价) + `ta_data.js`(cost)
-  2. Dashboard 卡片加"发布日期"文案（源码已改好，旧包没有）
-  3. TA 图表加 MA100；可选：加实时报价条
-  4. 真机重装（需用户解锁 iPhone 保持亮屏，上次 CoreDevice 4016 就是锁屏导致）
+- App：真机版已更新至 2026-10-01 构建（约 10/8 到期）：
+  DataStore 改读统一数据源（rt_charts.js 的 gc K线 + rt_quotes.js 报价 + ta_data.js 成本，
+  旧版 ta_data.js 缓存含 ohlc 时自动兜底）；Dashboard 顶部新增实时报价条；
+  TA 均线面板加 MA100。模拟器截图验证通过，真机已重装。
+  待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）。
 - GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；
   **2026-10-01 根因已定位：`gold_cot.py` 新增 `fetch_sina_quotes()` 时漏了 `import re`，
   导致 `build_ta_data()` 抛 NameError，技术分析页 `ta_data.js` 写不出来，

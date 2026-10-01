@@ -76,11 +76,12 @@ struct TAView: View {
         }
     }
 
-    // MARK: 图2: 收盘价 + 均线 MA5/10/20/60/120/250
+    // MARK: 图2: 收盘价 + 均线 MA5/10/20/60/100/120/250
 
     private let maDefs: [(String, Int, Color)] = [
         ("MA5", 5, .red), ("MA10", 10, .orange), ("MA20", 20, .blue),
-        ("MA60", 60, .green), ("MA120", 120, .purple), ("MA250", 250, .secondary),
+        ("MA60", 60, .green), ("MA100", 100, .indigo),
+        ("MA120", 120, .purple), ("MA250", 250, .secondary),
     ]
 
     private var maPanel: some View {

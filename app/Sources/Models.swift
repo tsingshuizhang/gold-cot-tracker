@@ -46,6 +46,17 @@ struct TaPayload {
     var cost: [(year: Int, value: Double)] = []
 }
 
+/// 实时行情快照 (与网站 data/rt_quotes.js 对应: xau / gc / sge)
+struct RtQuote: Identifiable {
+    let id = UUID()
+    let key: String          // xau / gc / sge
+    let name: String
+    let last: Double?
+    let change: Double?
+    let changePct: Double?
+    let time: String
+}
+
 // MARK: - 日期工具
 
 enum DateUtil {

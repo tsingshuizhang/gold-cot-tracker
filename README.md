@@ -132,7 +132,8 @@ python gold_cot.py all                   # 一次全部执行
 
 - 伦敦金 XAU/USD (新浪 `hf_XAU`)、COMEX 黄金 GC (新浪 `hf_GC`)、
   上海黄金 T+D AUTD (东方财富 `118.AUTD`) 三品种实时快照
-- 每 **10 秒**自动刷新; 优先浏览器直接拉取新浪/东方财富实时接口,
+- 每 **10 秒**自动刷新; 浏览器端统一使用**东方财富 ulist JSONP** 拉取三品种实时行情
+  (新浪 hq.sinajs.cn 校验 Referer, 跨域引用会被 403);
   失败时回落到 Actions 生成的 `data/rt_quotes.js` 静态快照
 - 显示最新价、涨跌额/涨跌幅、最高/最低/开盘/昨收、成交量/成交额
 - **K线 + MACD(12,26,9) 实时图表**: 点击卡片切换品种, 历史日K来自
@@ -155,6 +156,8 @@ SwiftUI 原生 App `GoldCotTracker`, 与网页同功能 (持仓看板 + 技术�
 Canvas 手绘图表 (大数据量不卡), 坐标文字走 SwiftUI 保证拖动流畅,
 长按十字光标数值浮窗, 时间条拖动实时跟手 + 双击复位,
 PCR 单独显示时叠加 ±1σ 上下轨, 深色模式适配, 数据本地缓存 (打开秒显, 后台联网刷新)。
+与网页**共享同一套统一数据源**: `rt_charts.js` (K线) + `rt_quotes.js` (实时报价,
+看板顶部横滑报价条) + `ta_data.js` (开采成本); 均线含 MA100。
 
 - 源码在 `app/Sources/`; 工程由 `app/project.yml` 经 XcodeGen 生成, 勿手改 pbxproj
 - 构建/真机安装命令、签名团队、已知坑位全部记录在 **[process.md](process.md)**

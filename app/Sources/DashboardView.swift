@@ -52,6 +52,7 @@ struct DashboardView: View {
                     description: Text(store.errorMessage ?? "")
                 )
             } else {
+                quotesBar
                 cards
                 Picker("时间维度", selection: $dim) {
                     ForEach(Dim.allCases) { Text($0.rawValue).tag($0) }
@@ -74,6 +75,34 @@ struct DashboardView: View {
         .onAppear { if seriesCache.isEmpty { recomputeBase() } }
         .onChange(of: dim) { _, _ in recomputeBase() }
         .onChange(of: store.cot.updated) { _, _ in recomputeBase() }
+    }
+
+    // MARK: 实时行情条 (伦敦金 / COMEX / 上金 T+D, 来自 rt_quotes.js 主数据)
+
+    private var quotesBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(store.quotes) { q in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(q.name).font(.caption2).foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(q.last != nil ? String(format: "%.2f", q.last!) : "--")
+                                .font(.headline).monospacedDigit()
+                            if let c = q.change, let p = q.changePct {
+                                Text(String(format: "%+.2f(%+.2f%%)", c, p))
+                                    .font(.caption2)
+                                    .foregroundStyle(c >= 0 ? .red : .green)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(8)
+                }
+            }
+            .padding(.horizontal)
+        }
+        .padding(.bottom, 4)
     }
 
     // MARK: 顶部指标卡片
