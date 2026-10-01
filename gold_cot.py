@@ -727,12 +727,73 @@ def fetch_eastmoney_quote(secid: str, name: str, scale: float = 1.0) -> dict | N
     }
 
 
+def _fetch_em_quotes_ulist() -> dict:
+    """东方财富 ulist 批量实时行情 (服务端兜底; f2=最新 f3=涨跌幅% f4=涨跌额 f18=昨收)。"""
+    url = ("https://push2.eastmoney.com/api/qt/ulist.np/get"
+           "?secids=122.XAU,101.GC00Y,118.AUTD"
+           "&fields=f2,f3,f4,f12,f15,f16,f17,f18")
+    try:
+        with urllib.request.urlopen(urllib.request.Request(
+                url, headers={"User-Agent": USER_AGENT}), timeout=15) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [提示] 东方财富 ulist 兜底抓取失败: {exc}")
+        return {}
+    out: dict[str, dict] = {}
+    mapping = {"122.XAU": ("xau", "伦敦金 XAU/USD", 10000.0),
+               "101.GC00Y": ("gc", "COMEX 黄金 GC", 10000.0),
+               "118.AUTD": ("sge", "上海黄金 T+D AUTD", 100000.0)}
+    for d in (payload.get("data") or {}).get("diff") or []:
+        info = mapping.get(str(d.get("f12")))
+        if not info:
+            continue
+        key, name, big = info
+
+        def fv(v):
+            if v is None:
+                return None
+            v = float(v)
+            if v == 0:
+                return None
+            return round(v / 100.0, 2) if v > big else round(v, 2)
+
+        last = fv(d.get("f2"))
+        if last is None:
+            continue
+        prev = fv(d.get("f18"))
+        change = d.get("f4")
+        change = round(float(change), 2) if change not in (None, 0, "", "-") \
+            else (round(last - prev, 2) if prev else None)
+        change_pct = d.get("f3")
+        change_pct = round(float(change_pct), 2) \
+            if change_pct not in (None, 0, "", "-") else None
+        out[key] = {
+            "symbol": str(d.get("f12")), "name": name,
+            "last": last, "high": fv(d.get("f15")), "low": fv(d.get("f16")),
+            "open": fv(d.get("f17")), "prev_close": prev,
+            "change": change, "change_pct": change_pct,
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        }
+    return out
+
+
 def fetch_rt_quotes() -> dict:
-    """聚合实时行情: 伦敦金、COMEX黄金、上海黄金T+D。"""
+    """聚合实时行情: 伦敦金、COMEX黄金、上海黄金T+D。
+
+    主源新浪; 任一品种缺失时用东方财富 ulist 兜底补齐。
+    """
     quotes = fetch_sina_quotes()
-    sge = fetch_eastmoney_quote("118.AUTD", "上海黄金 T+D AUTD", scale=100.0)
-    if sge:
-        quotes["sge"] = sge
+    missing = {"xau", "gc", "sge"} - set(quotes)
+    if missing:
+        em = _fetch_em_quotes_ulist()
+        for k in missing:
+            if k in em:
+                quotes[k] = em[k]
+    if not quotes.get("sge"):
+        sge = fetch_eastmoney_quote("118.AUTD", "上海黄金 T+D AUTD", scale=100.0)
+        if sge:
+            quotes["sge"] = sge
     return quotes
 
 

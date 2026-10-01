@@ -92,7 +92,7 @@
 
   <div class="note">
     每 10 秒自动刷新实时报价并更新当前 K线柱; 点击上方卡片切换品种。
-    伦敦金/COMEX 来自新浪财经, 上金 T+D 来自东方财富; 历史K线由 GitHub Actions 定时生成
+    伦敦金/COMEX/上金 T+D 实时报价均来自东方财富行情接口; 历史K线由 GitHub Actions 定时生成
     (<code>data/rt_charts.js</code>)。MACD(12, 26, 9), 柱 = 2×(DIF−DEA)。
   </div>
 </div>
@@ -297,78 +297,63 @@ function renderChart() {
   }, true);
 }
 
-// ---------------- 新浪实时行情 JSONP ----------------
-function parseSinaQuote(code, body, name) {
-  const p = body.split(',');
-  if (p.length < 14) return null;
-  const last = parseFloat(p[3]);
-  const high = parseFloat(p[4]);
-  const low = parseFloat(p[5]);
-  const prev_close = parseFloat(p[7] || p[1]) || null;
-  const open = parseFloat(p[8]) || null;
-  const change = prev_close ? last - prev_close : null;
-  const change_pct = prev_close ? change / prev_close * 100 : null;
-  return {
-    symbol: code, name: name, last: last, high: high, low: low,
-    open: open, prev_close: prev_close,
-    change: change ? +change.toFixed(2) : null,
-    change_pct: change_pct ? +change_pct.toFixed(2) : null,
-    time: p[6], date: new Date().toISOString().slice(0, 10)
-  };
+// ---------------- 东方财富实时行情 JSONP (三品种一次请求) ----------------
+// 新浪 hq.sinajs.cn 校验 Referer(只允许 *.sina.com.cn), 跨域 <script> 引用会被 403,
+// 因此浏览器端统一改用东方财富 ulist JSONP (支持 cb 回调, 无需 token)。
+// ulist 字段: f2=最新价 f3=涨跌幅% f4=涨跌额 f5=成交量 f6=成交额
+//             f12=代码 f14=名称 f15=最高 f16=最低 f17=今开 f18=昨收
+const EM_SECIDS = { '122.XAU': 'xau', '101.GC00Y': 'gc', '118.AUTD': 'sge' };
+const EM_NAMES = { xau: '伦敦金 XAU/USD', gc: 'COMEX 黄金 GC', sge: '上海黄金 T+D AUTD' };
+
+function normPrice(key, v) {
+  if (v == null) return null;
+  v = parseFloat(v);
+  if (isNaN(v) || v === 0) return null;   // 0 表示未开盘/字段无效
+  if ((key === 'xau' || key === 'gc') && v > 10000) v /= 100;   // 部分接口原值放大100倍
+  if (key === 'sge' && v > 100000) v /= 100;
+  return v;
 }
 
-function refreshSina() {
-  const s = document.createElement('script');
-  s.src = 'https://hq.sinajs.cn/list=hf_XAU,hf_GC&t=' + Date.now();
-  s.onload = () => {
-    const q = window.liveQuotes;
-    if (window.hq_str_hf_XAU)
-      q.xau = parseSinaQuote('hf_XAU', window.hq_str_hf_XAU, '伦敦金 XAU/USD');
-    if (window.hq_str_hf_GC)
-      q.gc = parseSinaQuote('hf_GC', window.hq_str_hf_GC, 'COMEX 黄金 GC');
+function emQuoteCallback(payload) {
+  const list = (payload && payload.data && payload.data.diff) || [];
+  const q = window.liveQuotes;
+  const today = new Date().toISOString().slice(0, 10);
+  let got = 0;
+  list.forEach(d => {
+    const key = EM_SECIDS[d['f12']];
+    if (!key) return;
+    const last = normPrice(key, d['f2']);
+    if (last == null) return;
+    const prev = normPrice(key, d['f18']);
+    const change = (d['f4'] != null && parseFloat(d['f4']) !== 0)
+      ? +parseFloat(d['f4']).toFixed(2)
+      : (prev != null ? +(last - prev).toFixed(2) : null);
+    const change_pct = (d['f3'] != null && parseFloat(d['f3']) !== 0)
+      ? +parseFloat(d['f3']).toFixed(2) : null;
+    q[key] = {
+      symbol: d['f12'], name: EM_NAMES[key],
+      last: last, high: normPrice(key, d['f15']), low: normPrice(key, d['f16']),
+      open: normPrice(key, d['f17']), prev_close: prev,
+      volume: d['f5'], amount: d['f6'],
+      change: change, change_pct: change_pct,
+      time: new Date().toLocaleTimeString('zh-CN'), date: today
+    };
+    got++;
+  });
+  if (got) {
     renderCards(); renderChart();
-    updateStatus('新浪实时已更新 · ' + new Date().toLocaleTimeString('zh-CN'));
-    refreshEastmoney();
-  };
-  s.onerror = () => updateStatus('新浪实时行情失败, 显示静态快照');
-  document.head.appendChild(s);
-}
-
-// ---------------- 东方财富实时行情 JSONP (上海黄金 T+D) ----------------
-function emCallback(payload) {
-  const data = (payload && payload.data) || {};
-  const scale = 100.0;
-  function fv(key) {
-    const v = data[key];
-    return v != null ? parseFloat(v) / scale : null;
+    updateStatus('实时行情已更新 (' + got + '/3) · ' + new Date().toLocaleTimeString('zh-CN'));
+  } else {
+    updateStatus('实时接口返回空数据, 显示静态快照');
   }
-  const last = fv('f43'), high = fv('f44'), low = fv('f45'), open = fv('f46');
-  const prev_close = fv('f60');
-  const change = (last != null && prev_close != null) ? last - prev_close : null;
-  const change_pct = (change && prev_close) ? change / prev_close * 100 : null;
-  window.liveQuotes.sge = {
-    symbol: '118.AUTD', name: '上海黄金 T+D AUTD',
-    last: last, high: high, low: low, open: open, prev_close: prev_close,
-    change: change != null ? +change.toFixed(2) : null,
-    change_pct: change_pct != null ? +change_pct.toFixed(2) : null,
-    time: new Date().toLocaleTimeString('zh-CN'),
-    date: new Date().toISOString().slice(0, 10)
-  };
-  renderCards(); renderChart();
-  updateStatus('实时行情已更新 · ' + new Date().toLocaleTimeString('zh-CN'));
 }
 
-function refreshEastmoney() {
-  const fields = 'f43,f44,f45,f46,f47,f48,f57,f58,f60,f107';
+function refreshQuotes() {
+  const fields = 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17,f18';
   const s = document.createElement('script');
-  s.src = 'https://push2.eastmoney.com/api/qt/stock/get?secid=118.AUTD&fields=' + fields
-        + '&cb=emCallback&t=' + Date.now();
-  s.onerror = () => {
-    if (window.liveQuotes && (window.liveQuotes.xau || window.liveQuotes.gc)) {
-      renderCards(); renderChart();
-    }
-    updateStatus('东方财富(上金T+D)实时失败, 已用静态快照');
-  };
+  s.src = 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids=122.XAU,101.GC00Y,118.AUTD'
+        + '&fields=' + fields + '&cb=emQuoteCallback&t=' + Date.now();
+  s.onerror = () => updateStatus('实时行情接口失败, 显示静态快照');
   document.head.appendChild(s);
 }
 
@@ -401,8 +386,8 @@ function updateStatus(text) { statusEl.textContent = text; }
 
 window.addEventListener('resize', () => chart.resize());
 loadStatic();
-refreshSina();
-setInterval(refreshSina, AUTO_REFRESH_SEC * 1000);
+refreshQuotes();
+setInterval(refreshQuotes, AUTO_REFRESH_SEC * 1000);
 </script>
 </body>
 </html>

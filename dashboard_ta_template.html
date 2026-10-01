@@ -138,7 +138,7 @@
     <code>data/ta_data.js</code>(本页开采成本常量),
     由 <code>gold_cot.py</code> 同一次运行生成, 保证各页面数据一致;
     也可点"刷新数据"手动重载; 行情增量更新请运行 <code>./run.sh ta</code>。
-    页面顶部<b>伦敦金 / COMEX 实时报价</b>来自新浪财经快照, 每 10 秒自动刷新;
+    页面顶部<b>伦敦金 / COMEX 实时报价</b>来自东方财富行情快照, 每 10 秒自动刷新;
     K线/均线/MACD 等仍基于日频收盘数据, 收盘后由 GitHub Actions 更新。<br>
     布林带 (20, 2); 均线 MA5/10/20/60/100/120/250; MACD(12, 26, 9), 柱 = 2×(DIF−DEA);
     K线周期可切换 日K/周K/月K (周期聚合: 开=首, 收=末, 高=最高, 低=最低);
@@ -611,7 +611,7 @@ chart.on('datazoom', () => {
     markLine: fibMarkLine(visible) }] });
 });
 
-// ---------------- 实时行情条 (新浪 JSONP, 每 10 秒刷新) ----------------
+// ---------------- 实时行情条 (东方财富 JSONP, 每 10 秒刷新) ----------------
 function parseSinaQuote(code, body, name) {
   const p = body.split(',');
   if (p.length < 14) return null;
@@ -653,17 +653,46 @@ function renderQuotes(q) {
     (date && time) ? `快照 ${date} ${time} · 每 10 秒刷新` : '实时行情加载中...';
 }
 
+// 浏览器端实时报价: 新浪 hq.sinajs.cn 校验 Referer 会 403 跨域请求,
+// 改用东方财富 ulist JSONP (f2=最新价 f3=涨跌幅% f4=涨跌额 f12=代码 f18=昨收)
+function normPrice(v) {
+  if (v == null) return null;
+  v = parseFloat(v);
+  if (isNaN(v) || v === 0) return null;
+  if (v > 10000) v /= 100;
+  return v;
+}
+
+function emQuoteCallback(payload) {
+  const list = (payload && payload.data && payload.data.diff) || [];
+  const q = {};
+  list.forEach(d => {
+    const code = d['f12'];
+    if (code !== '122.XAU' && code !== '101.GC00Y') return;
+    const key = code === '122.XAU' ? 'xau' : 'gc';
+    const last = normPrice(d['f2']);
+    if (last == null) return;
+    const prev = normPrice(d['f18']);
+    const change = (d['f4'] != null && parseFloat(d['f4']) !== 0)
+      ? +parseFloat(d['f4']).toFixed(2)
+      : (prev != null ? +(last - prev).toFixed(2) : null);
+    const change_pct = (d['f3'] != null && parseFloat(d['f3']) !== 0)
+      ? +parseFloat(d['f3']).toFixed(2) : null;
+    q[key] = {
+      symbol: code, name: key === 'xau' ? '伦敦金 XAU/USD' : 'COMEX 黄金 GC',
+      last: last, change: change, change_pct: change_pct,
+      time: new Date().toLocaleTimeString('zh-CN'),
+      date: new Date().toISOString().slice(0, 10)
+    };
+  });
+  if (q.xau || q.gc) renderQuotes(q);
+}
+
 function refreshSinaQuotes() {
+  const fields = 'f2,f3,f4,f12,f14,f18';
   const s = document.createElement('script');
-  s.src = 'https://hq.sinajs.cn/list=hf_XAU,hf_GC&t=' + Date.now();
-  s.onload = () => {
-    const q = {};
-    if (window.hq_str_hf_XAU)
-      q.xau = parseSinaQuote('hf_XAU', window.hq_str_hf_XAU, '伦敦金 XAU/USD');
-    if (window.hq_str_hf_GC)
-      q.gc = parseSinaQuote('hf_GC', window.hq_str_hf_GC, 'COMEX 黄金 GC');
-    renderQuotes(q);
-  };
+  s.src = 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids=122.XAU,101.GC00Y'
+        + '&fields=' + fields + '&cb=emQuoteCallback&t=' + Date.now();
   s.onerror = () => { /* 静默失败, 静态快照仍显示 */ };
   document.head.appendChild(s);
 }
