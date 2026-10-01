@@ -257,11 +257,16 @@ final class DataStore: ObservableObject {
     // MARK: 实时行情直连 (东方财富 ulist, URLSession 不带 Referer, 不会被校验拦截)
 
     /// 每 10 秒由实时页轮询调用; 失败静默(静态快照仍在)
+    /// 注意: 必须带 User-Agent —— 东财对无 UA 的裸连接会直接掐断(网络连接已中断)
     func refreshRtQuotesLive() async {
         let url = ("https://push2.eastmoney.com/api/qt/ulist.np/get"
                    + "?secids=122.XAU,101.GC00Y,118.AUTD"
                    + "&fields=f2,f3,f4,f12,f14,f15,f16,f17,f18")
-        guard let d = try? await Self.get(url),
+        var req = URLRequest(url: URL(string: url)!)
+        req.timeoutInterval = 15
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                     + "AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        guard let d = try? await URLSession.shared.data(for: req).0,
               let raw = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
               let diff = (raw["data"] as? [String: Any])?["diff"] as? [[String: Any]]
         else { return }

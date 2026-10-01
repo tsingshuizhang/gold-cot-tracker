@@ -1454,7 +1454,7 @@ def build_ta_data(weeks: int) -> dict | None:
         return None
     quotes = fetch_rt_quotes()
     write_rt_quotes(quotes)
-    write_rt_charts(quotes, min(weeks, 52))
+    write_rt_charts(quotes, weeks)   # 全量历史: App TA 页时间域与 COT 价格线对齐(曾误用52周致图表挤右侧)
     return {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "cost": MINING_COST_AISC,

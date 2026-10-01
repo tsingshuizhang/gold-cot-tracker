@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - 技术分析页 (与网页 dashboard_ta.html 同功能)
 
