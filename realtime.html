@@ -351,6 +351,7 @@ function emQuoteCallback(payload) {
 function refreshQuotes() {
   const fields = 'f2,f3,f4,f5,f6,f12,f14,f15,f16,f17,f18';
   const s = document.createElement('script');
+  s.referrerPolicy = 'no-referrer';   // 东方财富校验 Referer, 必须不带来源
   s.src = 'https://push2.eastmoney.com/api/qt/ulist.np/get?secids=122.XAU,101.GC00Y,118.AUTD'
         + '&fields=' + fields + '&cb=emQuoteCallback&t=' + Date.now();
   s.onerror = () => updateStatus('实时行情接口失败, 显示静态快照');

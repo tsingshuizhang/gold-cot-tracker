@@ -167,3 +167,129 @@ struct TAView: View {
         }
     }
 }
+
+
+// MARK: - 实时行情页 (与网页 realtime.html 同功能)
+// 三品种卡片(点按切换) + 日K + MACD; 每 10 秒直连东方财富刷新报价,
+// 历史K线来自 rt_charts.js 主数据, 当前 bar 用实时报价合成更新。
+
+struct RealtimeView: View {
+    @EnvironmentObject private var store: DataStore
+    @State private var selected = "gc"
+    @State private var hiddenMACD: Set<String> = []
+
+    private let timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
+
+    private let names: [String: String] = ["xau": "伦敦金 XAU/USD",
+                                           "gc": "COMEX 黄金 GC",
+                                           "sge": "上海黄金 T+D"]
+
+    // MARK: 数据装配: 历史(最近180根) + 实时合成当日 bar
+
+    private var history: [Ohlc] {
+        Array((store.rtCharts[selected] ?? []).suffix(180))
+    }
+
+    private var quote: RtQuote? { store.quotes.first { $0.key == selected } }
+
+    private var ohlc: [Ohlc] {
+        var rows = history
+        guard let q = quote, let last = q.last else { return rows }
+        let today = DateUtil.parse(DateUtil.short.string(from: Date())) ?? Date()
+        if let base = rows.last, Calendar.current.isDate(base.date, inSameDayAs: today) {
+            // 历史已含今日(未收盘)bar: 收盘价刷新 + 高低扩展
+            rows[rows.count - 1] = Ohlc(date: today, open: base.open, close: last,
+                                        high: max(base.high, last), low: min(base.low, last))
+        } else {
+            // 历史不含今日: 用昨收为开盘合成当日实时 bar
+            let prev = rows.last
+            rows.append(Ohlc(date: today, open: prev?.close ?? last, close: last,
+                             high: max(prev?.close ?? last, last),
+                             low: min(prev?.close ?? last, last)))
+        }
+        return rows
+    }
+
+    private var closes: [Double] { ohlc.map(\.close) }
+
+    // MARK: 子视图
+
+    private var cards: some View {
+        HStack(spacing: 10) {
+            ForEach(store.quotes) { q in
+                Button {
+                    selected = q.key
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(names[q.key] ?? q.name).font(.caption2)
+                            .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(q.last != nil ? String(format: "%.2f", q.last!) : "--")
+                                .font(.headline).monospacedDigit()
+                            if let c = q.change, let p = q.changePct {
+                                Text(String(format: "%+.2f(%+.2f%%)", c, p))
+                                    .font(.caption2)
+                                    .foregroundStyle(c >= 0 ? .red : .green)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(Color(.secondarySystemBackground))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(selected == q.key ? Color.orange : Color.clear,
+                                    lineWidth: 2)
+                    )
+                    .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal)
+    }
+
+    private var candlePanel: some View {
+        let rows = ohlc
+        return Panel(title: "\(names[selected] ?? "") 日K", height: 320) {
+            CandleChartView(ohlc: rows, boll: Indicators.boll(closes),
+                            fibs: Indicators.fibLevels(rows), xDomain: nil)
+        }
+    }
+
+    private var macdPanel: some View {
+        let m = Indicators.macd(closes)
+        let dates = ohlc.map(\.date)
+        return Panel(title: "MACD(12, 26, 9)", height: 200) {
+            VStack(spacing: 4) {
+                LegendToggle(items: [("DIF", .red), ("DEA", .blue), ("MACD 柱", C.mm)],
+                             hidden: $hiddenMACD)
+                MacdCanvas(dates: dates, hist: m.hist, dif: m.dif, dea: m.dea,
+                           crosses: [], hidden: hiddenMACD, height: 168,
+                           xDomain: nil)
+            }
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            if store.rtCharts.isEmpty && store.loading {
+                ProgressView("正在加载行情…").padding(.top, 60)
+            } else {
+                cards
+                candlePanel
+                macdPanel
+                Text("每 10 秒自动刷新实时报价 · 更新于 \(store.quotes.first?.time ?? "--")")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .padding(.top, 4)
+            }
+        }
+        .navigationTitle("实时行情")
+        .onReceive(timer) { _ in
+            Task { await store.refreshRtQuotesLive() }
+        }
+        .onAppear {
+            Task { await store.refreshRtQuotesLive() }
+        }
+    }
+}

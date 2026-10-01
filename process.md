@@ -64,7 +64,12 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
   跨域 `<script>` 引用一律 403 —— **浏览器端必须用东方财富 ulist JSONP**
   (`push2.eastmoney.com/api/qt/ulist.np/get?secids=122.XAU,101.GC00Y,118.AUTD&fields=f2,f3,f4,f12,f14,f15,f16,f17,f18&cb=回调名`,
   f2=最新价 f3=涨跌幅% f4=涨跌额 f15=最高 f16=最低 f17=今开 f18=昨收; 部分字段原值放大100倍需归一)。
+  **`<script>` 元素必须设 `referrerPolicy='no-referrer'`, 否则东财也校验 Referer 拦截(2026-10-01 踩过)**。
+  App (URLSession) 默认不带 Referer, 可直接访问同一接口 (DataStore.refreshRtQuotesLive, 10秒轮询)。
   服务端 (gold_cot.py) 仍用新浪 urllib(带 Referer 头) + 东财 ulist 兜底。
+- **App 实时页**: `RealtimeView` 放在 `TAView.swift` 末尾(独立文件需 xcodegen 重生工程,
+  本机 XcodeGen.zip 是坏文件"Not Found"; 网络恢复后应 `brew install xcodegen` 修正);
+  第三 Tab "实时行情", 卡片切换三品种 + 日K + MACD, 当前 bar 由实时报价合成。
 
 ## GitHub Actions `update.yml` 维护
 
@@ -166,11 +171,10 @@ xcrun devicectl device install app --device <手机UDID> \
   技术分析页顶部实时报价条正常；COMEX 日频 K线已追平至 **2026-09-30**，
   之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败；
   **新增 `realtime.html` 贵金属实时行情页**，展示伦敦金/COMEX/上金 T+D，每 10 秒刷新。
-- App：真机版已更新至 2026-10-01 构建（约 10/8 到期）：
-  DataStore 改读统一数据源（rt_charts.js 的 gc K线 + rt_quotes.js 报价 + ta_data.js 成本，
-  旧版 ta_data.js 缓存含 ohlc 时自动兜底）；Dashboard 顶部新增实时报价条；
-  TA 均线面板加 MA100。模拟器截图验证通过，真机已重装。
-  待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）。
+- App：真机版已更新至 2026-10-01 晚构建（约 10/8 到期）：
+  DataStore 读统一数据源 + **东财直连 10 秒轮询实时报价**; 三个 Tab:
+  持仓看板(含实时报价条) / 技术分析(MA100) / **实时行情(RealtimeView, 与网页 realtime.html 同功能)**。
+  待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）、brew install xcodegen。
 - GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；
   **2026-10-01 根因已定位：`gold_cot.py` 新增 `fetch_sina_quotes()` 时漏了 `import re`，
   导致 `build_ta_data()` 抛 NameError，技术分析页 `ta_data.js` 写不出来，

@@ -10,7 +10,8 @@ final class DataStore: ObservableObject {
 
     @Published var cot = CotPayload()
     @Published var ta = TaPayload()
-    @Published var quotes: [RtQuote] = []   // 实时行情 (rt_quotes.js)
+    @Published var quotes: [RtQuote] = []   // 实时行情 (rt_quotes.js + 东财直连)
+    @Published var rtCharts: [String: [Ohlc]] = [:]  // 实时页K线: xau/gc/sge (rt_charts.js)
     @Published var loading = false
     @Published var errorMessage: String?
 
@@ -76,10 +77,13 @@ final class DataStore: ObservableObject {
         }
         do {
             let data = try await Self.get("\(Self.base)/data/rt_charts.js")
-            let rows = try parseRtCharts(data)
-            if !rows.isEmpty { self.ta.ohlc = rows }
+            let parsed = try parseRtCharts(data)
+            if !parsed.isEmpty {
+                self.rtCharts = parsed
+                if let gc = parsed["gc"], !gc.isEmpty { self.ta.ohlc = gc }
+            }
             saveCache(data, name: "rt_charts.js")
-            dbg.log("rt charts ok: \(rows.count)")
+            dbg.log("rt charts ok: \(self.rtCharts.map { "\($0.key):\($0.value.count)" }.joined(separator: " "))")
         }
         catch {
             dbg.log("rt charts fail: \(error.localizedDescription)")
@@ -114,9 +118,10 @@ final class DataStore: ObservableObject {
         }
         // K线主数据 (统一数据源后 ohlc 在 rt_charts.js, ta_data.js 只剩成本)
         if let d = try? Data(contentsOf: Self.cacheURL("rt_charts.js")),
-           let rows = try? parseRtCharts(d), !rows.isEmpty {
-            ta.ohlc = rows
-            dbg.log("rt charts cache: \(rows.count)")
+           let parsed = try? parseRtCharts(d), !parsed.isEmpty {
+            rtCharts = parsed
+            if let gc = parsed["gc"], !gc.isEmpty { ta.ohlc = gc }
+            dbg.log("rt charts cache: \(parsed.map { "\($0.key):\($0.value.count)" }.joined(separator: " "))")
         }
         if let d = try? Data(contentsOf: Self.cacheURL("ta_data.js")),
            let p = try? parseTa(d) {
@@ -212,18 +217,23 @@ final class DataStore: ObservableObject {
         return try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] ?? [:]
     }
 
-    /// rt_charts.js: K线主数据, 取 gc.rows [[日期,开,收,高,低],...]
-    private func parseRtCharts(_ data: Data) throws -> [Ohlc] {
+    /// rt_charts.js: K线主数据 { gc:{rows}, xau:{rows}, sge:{rows} } -> [品种: [Ohlc]]
+    private func parseRtCharts(_ data: Data) throws -> [String: [Ohlc]] {
         let raw = try parseJsAssignment(data)
-        guard let gc = raw["gc"] as? [String: Any],
-              let rows = gc["rows"] as? [[Any]] else { return [] }
-        return rows.compactMap { r in
-            guard r.count >= 5, let d = DateUtil.parse(r[0] as? String ?? ""),
-                  let o = r[1] as? Double, let c = r[2] as? Double,
-                  let h = r[3] as? Double, let l = r[4] as? Double
-            else { return nil }
-            return Ohlc(date: d, open: o, close: c, high: h, low: l)
-        }.sorted { $0.date < $1.date }
+        var out: [String: [Ohlc]] = [:]
+        for key in ["gc", "xau", "sge"] {
+            guard let pack = raw[key] as? [String: Any],
+                  let rows = pack["rows"] as? [[Any]] else { continue }
+            let arr = rows.compactMap { r -> Ohlc? in
+                guard r.count >= 5, let d = DateUtil.parse(r[0] as? String ?? ""),
+                      let o = r[1] as? Double, let c = r[2] as? Double,
+                      let h = r[3] as? Double, let l = r[4] as? Double
+                else { return nil }
+                return Ohlc(date: d, open: o, close: c, high: h, low: l)
+            }.sorted { $0.date < $1.date }
+            if !arr.isEmpty { out[key] = arr }
+        }
+        return out
     }
 
     /// rt_quotes.js: 实时报价 { xau: {...}, gc: {...}, sge: {...} }
@@ -242,6 +252,49 @@ final class DataStore: ObservableObject {
                 time: d["time"] as? String ?? ""
             )
         }
+    }
+
+    // MARK: 实时行情直连 (东方财富 ulist, URLSession 不带 Referer, 不会被校验拦截)
+
+    /// 每 10 秒由实时页轮询调用; 失败静默(静态快照仍在)
+    func refreshRtQuotesLive() async {
+        let url = ("https://push2.eastmoney.com/api/qt/ulist.np/get"
+                   + "?secids=122.XAU,101.GC00Y,118.AUTD"
+                   + "&fields=f2,f3,f4,f12,f14,f15,f16,f17,f18")
+        guard let d = try? await Self.get(url),
+              let raw = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let diff = (raw["data"] as? [String: Any])?["diff"] as? [[String: Any]]
+        else { return }
+        let names: [String: String] = ["xau": "伦敦金 XAU/USD",
+                                       "gc": "COMEX 黄金 GC",
+                                       "sge": "上海黄金 T+D AUTD"]
+        let keyOf: [String: String] = ["122.XAU": "xau", "101.GC00Y": "gc", "118.AUTD": "sge"]
+        var merged = Dictionary(uniqueKeysWithValues: quotes.map { ($0.key, $0) })
+        let time = {
+            let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f.string(from: Date())
+        }()
+        func r2(_ v: Double) -> Double { (v * 100).rounded() / 100 }
+        for item in diff {
+            guard let code = item["f12"] as? String, let key = keyOf[code] else { continue }
+            func fv(_ v: Any?) -> Double? {
+                guard let n = v as? Double, n != 0 else { return nil }
+                // 部分字段原值放大100倍 (xau/gc>10000, sge>100000)
+                if (key == "sge" && n > 100000) || (key != "sge" && n > 10000) {
+                    return r2(n / 100)
+                }
+                return r2(n)
+            }
+            guard let last = fv(item["f2"]) else { continue }
+            let prev = fv(item["f18"])
+            var change = (item["f4"] as? Double).map(r2)
+            if change == 0 || change == nil, let prev { change = r2(last - prev) }
+            let pct = (item["f3"] as? Double).map(r2).flatMap { $0 == 0 ? nil : $0 }
+            merged[key] = RtQuote(key: key, name: names[key] ?? key,
+                                  last: last, change: change, changePct: pct,
+                                  time: time)
+        }
+        let order = ["xau", "gc", "sge"]
+        quotes = order.compactMap { merged[$0] }
     }
 
     private func parsePairs(_ any: Any?) -> [PricePoint] {

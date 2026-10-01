@@ -19,6 +19,12 @@ struct GoldCotTrackerApp: App {
                 }
                 .tabItem { Label("技术分析", systemImage: "chart.xyaxis.line") }
                 .tag(1)
+
+                NavigationStack {
+                    RealtimeView()
+                }
+                .tabItem { Label("实时行情", systemImage: "waveform.path.ecg") }
+                .tag(2)
             }
             .environmentObject(store)
             .task { await store.refresh() }
