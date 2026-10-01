@@ -65,6 +65,9 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
   (`push2.eastmoney.com/api/qt/ulist.np/get?secids=122.XAU,101.GC00Y,118.AUTD&fields=f2,f3,f4,f12,f14,f15,f16,f17,f18&cb=回调名`,
   f2=最新价 f3=涨跌幅% f4=涨跌额 f15=最高 f16=最低 f17=今开 f18=昨收; 部分字段原值放大100倍需归一)。
   **`<script>` 元素必须设 `referrerPolicy='no-referrer'`, 否则东财也校验 Referer 拦截(2026-10-01 踩过)**。
+  **裸 HTTP 请求必须带 User-Agent, 否则东财直接掐断连接(2026-10-01 App 踩过: "网络连接已中断")**。
+  **rt_charts.js 必须保留全量历史**(write_rt_charts 的 weeks 不能截断, 曾误用 52 周):
+  App TA 页时间域 = K线日期 ∪ cot.price 日期, K线只有 1 年而价格线 10 年时, 图表会挤在最右侧 10%。
   App (URLSession) 默认不带 Referer, 可直接访问同一接口 (DataStore.refreshRtQuotesLive, 10秒轮询)。
   服务端 (gold_cot.py) 仍用新浪 urllib(带 Referer 头) + 东财 ulist 兜底。
 - **App 实时页**: `RealtimeView` 放在 `TAView.swift` 末尾(独立文件需 xcodegen 重生工程,
