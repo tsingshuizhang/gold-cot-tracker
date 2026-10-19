@@ -9,6 +9,12 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: "YES"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        DEVELOPMENT_TEAM: MQM879TDKM
     info:
       path: Generated/Info.plist
       properties:

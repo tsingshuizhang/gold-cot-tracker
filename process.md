@@ -143,7 +143,11 @@ xcrun devicectl device install app --device <手机UDID> \
 - **Indicators 有边界保护**：boll/macd 数据不足 n 条时返回空（`19..<5` 非法区间崩溃事故过）。
 - 深色模式：全部用系统自适应色（systemBackground/secondary），禁止写死白色/灰色（事故过）。
 - DataStore.refresh()：先读磁盘缓存立即显示，再联网刷新并落盘（caches 目录）。
-- 真机构建必须带 `CODE_SIGNING_ALLOWED=YES`（工程 pbxproj 里默认 NO，模拟器时代的遗留）。
+- **签名已配置为自动** (2026-10-01 起): pbxproj + project.yml 里
+  `CODE_SIGNING_ALLOWED=YES / CODE_SIGN_STYLE=Automatic / DEVELOPMENT_TEAM=MQM879TDKM`,
+  **Xcode 直接 Run 即可**, 命令行也不必再手动覆盖签名参数。
+  注意: pbxproj 此次为手工改(本机 XcodeGen.zip 是坏文件), 将来 xcodegen 重生工程
+  依赖 project.yml 里的 settings.base 保持一致, 勿删。
 
 ## 已知环境坑
 
