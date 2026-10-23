@@ -1,8 +1,8 @@
-  [缓存] COT 已是最新 (最新报告 2026-10-13, 周五 15:30 ET 发布新报告后才需抓取)
+正在从 CFTC 抓取黄金 COT 数据 (最近 520 周)...
   [增量] 黄金 OHLC 补齐 2026-10-18 以来的最新数据 (含实时 bar)
   [增量] 美元指数补齐 2026-10-18 以来的最新数据
 正在抓取黄金期权 PCR ...
-  [增量] 沪金期权 PCR 补齐 2026-10-20 ~ 2026-10-22 内 3 个缺失日
+  [增量] 沪金期权 PCR 补齐 2026-10-21 ~ 2026-10-23 内 3 个缺失日
 /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/yfinance/utils.py:568: Pandas4Warning: The inplace keyword in DataFrame.sort_index is deprecated and will be removed in a future version (PDEP-8).
 See https://pandas.pydata.org/docs/dev/whatsnew/v3.1.0.html#deprecation-inplace for more details.
   quotes.sort_index(inplace=True)
@@ -18,7 +18,7 @@ See https://pandas.pydata.org/docs/dev/whatsnew/v3.1.0.html#deprecation-inplace 
 /opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/yfinance/multi.py:224: Pandas4Warning: The inplace keyword in DataFrame.sort_index is deprecated and will be removed in a future version (PDEP-8).
 See https://pandas.pydata.org/docs/dev/whatsnew/v3.1.0.html#deprecation-inplace for more details.
   data.sort_index(level=0, axis=1, inplace=True)
-  [完成] 沪金期权 PCR 共 627 条 (本次新增 3)
+  [完成] 沪金期权 PCR 共 628 条 (本次新增 3)
   持仓看板已生成 -> /home/runner/work/gold-cot-tracker/gold-cot-tracker/dashboard.html
   [增量] 黄金 OHLC 补齐 2026-10-18 以来的最新数据 (含实时 bar)
   [提示] 下载中断, 第 2 次重试...
