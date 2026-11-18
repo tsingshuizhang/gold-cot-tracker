@@ -12,11 +12,28 @@
 <title>贵金属实时行情 | 黄金 CFTC COT</title>
 <script src="echarts.min.js"></script>
 <style>
+  :root {
+    --bg: #f5f6fa; --card-bg: #fff; --text: #2c3e50; --text-secondary: #7f8c8d;
+    --text-muted: #95a5a6; --border: #dcdde1; --shadow: rgba(0,0,0,.06);
+    --grid-border: rgba(0,0,0,.10); --split-line: #e3e7ee; --axis-label: #8a94a6;
+  }
+  [data-theme="dark"] {
+    --bg: #1a1a2e; --card-bg: #16213e; --text: #f2f2f7; --text-secondary: #c7c7d9;
+    --text-muted: #a6a6bb; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
+    --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #b8b8cc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1a2e; --card-bg: #16213e; --text: #f2f2f7; --text-secondary: #c7c7d9;
+      --text-muted: #a6a6bb; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
+      --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #b8b8cc;
+    }
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: auto; }
   body {
     font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    background: #f5f6fa; color: #2c3e50; padding: 20px;
+    background: var(--bg); color: var(--text); padding: 20px;
   }
   .container { width: 100%; max-width: 960px; margin: 0 auto; }
   .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -31,33 +48,39 @@
   }
   .navpill:hover { background: #e67e22; }
   .navpill.active { background: #d35400; cursor: default; }
-  .status { margin-left: auto; font-size: 12px; color: #95a5a6; }
+  .status { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+  .theme-btn {
+    border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--text);
+    margin-left: 8px;
+  }
+  .theme-btn:hover { border-color: #f39c12; color: #f39c12; }
 
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 12px; }
   .card {
-    background: #fff; border-radius: 12px; padding: 14px 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06); cursor: pointer;
+    background: var(--card-bg); border-radius: 12px; padding: 14px 16px;
+    box-shadow: 0 1px 4px var(--shadow); cursor: pointer;
     border: 2px solid transparent; transition: border-color .15s;
   }
   .card.active { border-color: #f39c12; }
-  .card .name { font-size: 13px; color: #7f8c8d; margin-bottom: 2px; }
+  .card .name { font-size: 13px; color: var(--text-secondary); margin-bottom: 2px; }
   .card .price { font-size: 24px; font-weight: 600; }
   .card .change { font-size: 12px; margin-top: 2px; }
-  .card .time { font-size: 10px; color: #95a5a6; margin-top: 6px; }
-  .up { color: #c0392b; } .down { color: #27ae60; } .gray { color: #95a5a6; }
+  .card .time { font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+  .up { color: #c0392b; } .down { color: #27ae60; } .gray { color: var(--text-muted); }
 
   .chart-wrap {
-    background: #fff; border-radius: 12px; padding: 14px 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    background: var(--card-bg); border-radius: 12px; padding: 14px 16px;
+    box-shadow: 0 1px 4px var(--shadow);
   }
   .chart-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
   .chart-title h2 { font-size: 16px; }
-  .chart-title .ohlc { font-size: 12px; color: #7f8c8d; }
-  .chart-title .ohlc b { color: #2c3e50; }
+  .chart-title .ohlc { font-size: 12px; color: var(--text-secondary); }
+  .chart-title .ohlc b { color: var(--text); }
   #chart { width: 100%; height: 520px; }
   .approx-note { font-size: 11px; color: #e67e22; margin-top: 6px; display: none; }
 
-  .note { font-size: 12px; color: #95a5a6; line-height: 1.7; margin-top: 12px; }
+  .note { font-size: 12px; color: var(--text-muted); line-height: 1.7; margin-top: 12px; }
 
   @media (max-width: 768px) {
     body { padding: 12px; }
@@ -77,6 +100,7 @@
       <span class="navpill active">实时行情</span>
     </div>
     <span class="status" id="status">加载中...</span>
+    <button class="theme-btn" id="themeBtn" title="切换深色/浅色模式">🌙 深色</button>
   </div>
 
   <div class="cards" id="cards"></div>
@@ -113,6 +137,27 @@ let currentKey = 'xau';
 let chartsData = null;    // window.RT_CHARTS
 window.liveQuotes = {};
 
+// 深色/浅色模式切换 (三页统一逻辑)
+const themeBtn = document.getElementById('themeBtn');
+function darkMode() {
+  const t = document.documentElement.getAttribute('data-theme');
+  return t === 'dark' ||
+    (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function applyTheme(mode, redraw = true) {
+  if (mode === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else if (mode === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+  themeBtn.textContent = darkMode() ? '☀️ 浅色' : '🌙 深色';
+  localStorage.setItem('goldCotTheme', mode);
+  if (redraw && chartsData) renderChart();
+}
+applyTheme(localStorage.getItem('goldCotTheme') || 'auto', false);
+themeBtn.addEventListener('click', () => applyTheme(darkMode() ? 'light' : 'dark'));
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if ((localStorage.getItem('goldCotTheme') || 'auto') === 'auto') applyTheme('auto');
+});
+
 if (typeof echarts === 'undefined') {
   document.getElementById('chart').innerHTML =
     '<div style="padding:60px 20px;text-align:center;color:#95a5a6;font-size:13px">图表组件加载失败，请强制刷新页面</div>';
@@ -126,6 +171,19 @@ const COLORS = {
   ma5: '#e74c3c', ma10: '#f39c12', ma20: '#2980b9', ma60: '#27ae60',
   ma100: '#8e44ad',
 };
+
+function chartColors() {
+  const dark = darkMode();
+  return {
+    text: dark ? '#c7c7d9' : '#7f8c8d',
+    axisLabel: dark ? '#b8b8cc' : '#8a94a6',
+    splitLine: dark ? '#2a2a4a' : '#e3e7ee',
+    gridBorder: dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,0.10)',
+    tooltipBg: dark ? '#16213e' : '#fff',
+    tooltipText: dark ? '#f2f2f7' : '#2c3e50',
+    legendText: dark ? '#c7c7d9' : '#2c3e50',
+  };
+}
 
 function fmt(n, digits) {
   if (n == null || isNaN(n)) return '--';
@@ -194,6 +252,7 @@ function calcMA(closes, n) {
 
 // ---------------- 渲染 K线 + MACD ----------------
 function renderChart() {
+  const cc = chartColors();
   const rows = displayRows(currentKey);
   const pack = (chartsData || {})[currentKey];
   chartNameEl.textContent = INSTRUMENTS[currentKey].label + ' 日K';
@@ -202,7 +261,7 @@ function renderChart() {
     chart.clear();
     chart.setOption({
       title: { text: '历史K线生成中\n(GitHub Actions 下一轮更新后显示)', left: 'center', top: 'middle',
-               textStyle: { fontSize: 14, color: '#95a5a6', fontWeight: 'normal' } }
+               textStyle: { fontSize: 14, color: cc.text, fontWeight: 'normal' } }
     });
     chartOhlcEl.textContent = '';
     return;
@@ -236,7 +295,8 @@ function renderChart() {
   chart.setOption({
     animation: false,
     legend: {
-      top: 0, left: 8, itemWidth: 14, itemHeight: 8, textStyle: { fontSize: 10 },
+      top: 0, left: 8, itemWidth: 14, itemHeight: 8,
+      textStyle: { fontSize: 10, color: cc.legendText },
       data: Object.keys(mas),
       formatter: name => {
         const arr = mas[name];
@@ -249,27 +309,31 @@ function renderChart() {
       { left: 70, right: 20, top: '72%', height: '18%' },
     ],
     xAxis: [
-      { type: 'category', data: dates, gridIndex: 0, axisLabel: { fontSize: 10 },
+      { type: 'category', data: dates, gridIndex: 0,
+        axisLabel: { fontSize: 10, color: cc.axisLabel },
         axisTick: { show: false } },
-      { type: 'category', data: dates, gridIndex: 1, axisLabel: { fontSize: 10 } },
+      { type: 'category', data: dates, gridIndex: 1,
+        axisLabel: { fontSize: 10, color: cc.axisLabel } },
     ],
     yAxis: [
       { scale: true, gridIndex: 0, position: 'left',
-        axisLabel: { fontSize: 10, formatter: v => v.toFixed(0) },
-        splitLine: { lineStyle: { color: '#eee' } } },
+        axisLabel: { fontSize: 10, color: cc.axisLabel, formatter: v => v.toFixed(0) },
+        splitLine: { lineStyle: { color: cc.splitLine } } },
       { scale: true, gridIndex: 1, position: 'left',
-        axisLabel: { fontSize: 9 }, splitLine: { show: false } },
+        axisLabel: { fontSize: 9, color: cc.axisLabel }, splitLine: { show: false } },
     ],
     dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 55, end: 100 }],
     tooltip: {
       trigger: 'axis', axisPointer: { type: 'cross' },
+      backgroundColor: cc.tooltipBg,
+      textStyle: { color: cc.tooltipText, fontSize: 12 },
       formatter: ps => {
         const i = ps[0].dataIndex;
         const v = view[i];
         const c = v[2] >= v[1] ? upColor : downColor;
         return `${v[0]}<br/>开 ${fmt(v[1], digits)} 收 <b style="color:${c}">${fmt(v[2], digits)}</b><br/>` +
                `高 ${fmt(v[3], digits)} 低 ${fmt(v[4], digits)}<br/>` +
-               `<span style="font-size:10px;color:#95a5a6">MACD DIF ${fmt(dif[i], 2)} DEA ${fmt(dea[i], 2)}</span>`;
+               `<span style="font-size:10px;color:${cc.text}">MACD DIF ${fmt(dif[i], 2)} DEA ${fmt(dea[i], 2)}</span>`;
       },
     },
     series: [

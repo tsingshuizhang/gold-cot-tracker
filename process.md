@@ -181,6 +181,11 @@ xcrun devicectl device install app --device <手机UDID> \
   5. 两页均支持导出 PNG (ECharts toolbox) 和导出 CSV (可视区间数据)
   6. 网页深色模式 (CSS 变量 + ECharts 配色, 跟随系统自动切换)
   7. COT 周报推送 (Bark/Telegram, GitHub Actions 每周五自动执行)
+- **2026-11-18 深色模式修正完成**：实时行情页补齐主题支持，三页右上角均可手动
+  切换深色/浅色，`goldCotTheme=auto|dark|light` 跨页保存；系统深色时也能手动
+  覆盖为浅色。正文、次要文字、图表标题/图例/坐标轴/dataZoom/tooltip 均使用
+  动态高对比配色。注意 `applyTheme(..., false)` 首次只初始化不重绘，避免在
+  `CHART_COLORS` 或 `chart` 初始化前触发 TDZ/空对象错误；模板页改后必须重新生成。
 - 线上（GitHub Pages）：三页正常（持仓看板 / 技术分析 / 实时行情）。
   COT 最新报告 **2026-10-13**；COMEX 日K 到 **2026-10-19**；
   美元指数到 2026-10-19；上金 T+D 到 2026-10-19；

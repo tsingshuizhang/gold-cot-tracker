@@ -17,11 +17,16 @@
     --text-muted: #95a5a6; --border: #dcdde1; --shadow: rgba(0,0,0,.06);
     --grid-border: rgba(0,0,0,.10); --split-line: #e3e7ee; --axis-label: #8a94a6;
   }
+  [data-theme="dark"] {
+    --bg: #1a1a2e; --card-bg: #16213e; --text: #f2f2f7; --text-secondary: #c7c7d9;
+    --text-muted: #a6a6bb; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
+    --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #b8b8cc;
+  }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1a1a2e; --card-bg: #16213e; --text: #eee; --text-secondary: #a0a0c0;
-      --text-muted: #707090; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
-      --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #707090;
+    :root:not([data-theme="light"]) {
+      --bg: #1a1a2e; --card-bg: #16213e; --text: #f2f2f7; --text-secondary: #c7c7d9;
+      --text-muted: #a6a6bb; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
+      --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #b8b8cc;
     }
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -46,23 +51,29 @@
   }
   .navpill:hover { background: #e67e22; }
   .navpill.active { background: #d35400; cursor: default; }
+  .theme-btn {
+    border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px;
+    padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--text);
+    margin-left: 8px;
+  }
+  .theme-btn:hover { border-color: #f39c12; color: #f39c12; }
   .applink {
     font-size: 13px; color: #fff; background: #2980b9; padding: 7px 16px;
     border-radius: 6px; text-decoration: none; white-space: nowrap; margin-top: 2px;
   }
   .applink:hover { background: #2471a3; }
   .status { margin-left: auto; display: flex; align-items: center; gap: 12px;
-            font-size: 12px; color: #95a5a6; flex-wrap: wrap; }
+            font-size: 12px; color: var(--text-muted); flex-wrap: wrap; }
   .quote-bar {
     background: var(--card-bg); border-radius: 10px; padding: 12px 16px;
     box-shadow: 0 1px 4px var(--shadow); margin-bottom: 12px;
     display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
   }
   .quote-item { display: flex; align-items: baseline; gap: 8px; }
-  .quote-name { font-size: 13px; color: #7f8c8d; }
+  .quote-name { font-size: 13px; color: var(--text-secondary); }
   .quote-price { font-size: 20px; font-weight: 600; }
   .quote-change { font-size: 12px; }
-  .quote-time { font-size: 11px; color: #95a5a6; margin-left: auto; }
+  .quote-time { font-size: 11px; color: var(--text-muted); margin-left: auto; }
   .up { color: #c0392b; } .down { color: #27ae60; }
   .btn {
     border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px;
@@ -82,7 +93,7 @@
   .note { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.7; }
   .note-short { display: none; }
 
-  #zoomlabel { text-align: center; font-size: 11px; color: #95a5a6; margin-top: 4px; min-height: 14px; }
+  #zoomlabel { text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 4px; min-height: 14px; }
 
   /* ---- 手机端适配 (窄屏或矮屏, 覆盖手机横屏) ---- */
   @media (max-width: 768px), (max-height: 500px) {
@@ -113,6 +124,7 @@
       <a class="navpill" href="dashboard.html">持仓看板</a>
       <span class="navpill active">技术分析</span>
       <a class="navpill" href="realtime.html">实时行情</a>
+      <button class="theme-btn" id="themeBtn" title="切换深色/浅色模式">🌙 深色</button>
     </div>
     <div class="group">
       <span class="glabel">K线周期</span>
@@ -202,15 +214,42 @@ const COLORS = {
 };
 
 // 深色模式检测与 ECharts 配色
-const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-const CHART_COLORS = {
-  text: isDark ? '#a0a0c0' : '#7f8c8d',
-  axisLabel: isDark ? '#707090' : '#8a94a6',
-  splitLine: isDark ? '#2a2a4a' : '#e3e7ee',
-  gridBorder: isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,0.10)',
-  tooltipBg: isDark ? '#16213e' : '#fff',
-  tooltipText: isDark ? '#eee' : '#2c3e50',
-};
+function darkMode() {
+  const t = document.documentElement.getAttribute('data-theme');
+  return t === 'dark' ||
+    (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+function getChartColors() {
+  const dark = darkMode();
+  return {
+    text: dark ? '#c7c7d9' : '#7f8c8d',
+    title: dark ? '#f2f2f7' : '#2c3e50',
+    legendText: dark ? '#c7c7d9' : '#2c3e50',
+    axisLabel: dark ? '#b8b8cc' : '#8a94a6',
+    splitLine: dark ? '#2a2a4a' : '#e3e7ee',
+    gridBorder: dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,0.10)',
+    tooltipBg: dark ? '#16213e' : '#fff',
+    tooltipText: dark ? '#f2f2f7' : '#2c3e50',
+  };
+}
+let CHART_COLORS = getChartColors();
+
+// 深色/浅色模式切换 (三页统一逻辑)
+const themeBtn = document.getElementById('themeBtn');
+function applyTheme(mode, redraw = true) {
+  if (mode === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else if (mode === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+  themeBtn.textContent = darkMode() ? '☀️ 浅色' : '🌙 深色';
+  localStorage.setItem('goldCotTheme', mode);
+  CHART_COLORS = getChartColors();
+  if (redraw && chartData) render(chartData);
+}
+applyTheme(localStorage.getItem('goldCotTheme') || 'auto', false);
+themeBtn.addEventListener('click', () => applyTheme(darkMode() ? 'light' : 'dark'));
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if ((localStorage.getItem('goldCotTheme') || 'auto') === 'auto') applyTheme('auto');
+});
 
 // ---------------- 指标计算 ----------------
 // 日K -> 周K/月K 聚合: 开=首, 收=末, 高=最大, 低=最小
@@ -406,8 +445,8 @@ function render(ta) {
     itemWidth: narrow ? 11 : 14,
     itemHeight: narrow ? 7 : 14,
     itemGap: narrow ? 6 : 10,
-    textStyle: { fontSize: narrow ? 9 : 12 },
-    backgroundColor: narrow ? 'rgba(255,255,255,0.88)' : 'transparent',
+    textStyle: { fontSize: narrow ? 9 : 12, color: CHART_COLORS.legendText },
+    backgroundColor: narrow ? CHART_COLORS.tooltipBg : 'transparent',
     formatter: narrow ? (name => LEGEND_SHORT[name] || name) : undefined,
     inactiveColor: '#c8cdd5',
   });
@@ -467,21 +506,21 @@ function render(ta) {
     },
     title: [
       { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 60,
-        top: layout[0].titleTop, textStyle: { fontSize: narrow ? 10 : 13 } },
+        top: layout[0].titleTop, textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
       { text: '收盘价 + 均线 MA', left: 60, top: layout[1].titleTop,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
+        textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
       { text: '金价 vs 行业平均开采成本 (AISC) 及 金价/AISC 比值',
         left: 60, top: layout[2].titleTop,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
+        textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
       { text: 'MACD(12, 26, 9) — 金叉 / 死叉 / 顶背离 / 底背离',
         left: 60, top: layout[3].titleTop,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
+        textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
       { text: 'RSI(14) — 相对强弱指数', left: 60, top: layout[4].titleTop,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
+        textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
       { text: 'KDJ(9, 3, 3) — 随机指标', left: 60, top: layout[5].titleTop,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
+        textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
       { text: 'ATR(14) — 平均真实波幅', left: 60, top: layout[6].titleTop,
-        textStyle: { fontSize: narrow ? 10 : 13 } },
+        textStyle: { fontSize: narrow ? 10 : 13, color: CHART_COLORS.title } },
     ],
     tooltip: {
       trigger: 'axis',
@@ -526,7 +565,7 @@ function render(ta) {
     })),
     xAxis: [0, 1, 2, 3, 4, 5, 6].map(i => ({
       type: 'time', gridIndex: i, show: i === 6,
-      axisLabel: { hideOverlap: true },
+      axisLabel: { hideOverlap: true, color: CHART_COLORS.axisLabel },
     })),
     yAxis: [
       { scale: true, gridIndex: 0, splitNumber: 4,
@@ -560,6 +599,7 @@ function render(ta) {
         minValueSpan: MIN_SPAN_MS[period] },
       { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4, 5, 6], bottom: 8,
         height: narrow ? 26 : 22,
+        textStyle: { color: CHART_COLORS.axisLabel },
         minValueSpan: MIN_SPAN_MS[period] },
     ],
     series: [
