@@ -1,13 +1,13 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-10-01（会话：浏览器实时源切东财 JSONP、App 同步改造+真机重装）。
+> 零成本接续。最后更新：2026-11-18（会话：同步功能、主题、布局修改及文档接力规则）。
 
 ## 一句话项目
 
 抓取 CFTC 黄金 COT 持仓 + 金价/美元指数/期权 PCR，产出：
-① 网页看板 `dashboard.html`、② 网页技术分析页 `dashboard_ta.html`（GitHub Pages 线上自动更新）、
-③ iOS App `GoldCotTracker`（SwiftUI，已装用户真机）。
+① 网页看板 `dashboard.html`、② 网页技术分析页 `dashboard_ta.html`、③ 实时行情页 `realtime.html`
+（GitHub Pages 线上自动更新）、④ iOS App `GoldCotTracker`（SwiftUI，已装用户真机）。
 
 ## 仓库结构
 
@@ -16,6 +16,7 @@ gold_cot.py              # 唯一数据流水线: 抓取→缓存→生成网页
 dashboard_template.html  # 看板模板（改网页必须改模板，再用数据注入生成 dashboard.html）
 dashboard_ta_template.html # 技术分析页模板（同理生成 dashboard_ta.html）
 dashboard.html / dashboard_ta.html  # 生成产物（含注入数据，与模板同步修改）
+realtime.html            # 实时行情页（三品种快照 + 日K + MACD，独立维护）
 echarts.min.js           # 本地内置 ECharts 5.5（勿改回 CDN，用户网络访问 jsdelivr 不稳定）
 data/                    # cot_data.json / ta_data.js / ta_ohlc.json / 各类缓存（Actions 定时提交）
 app/                     # iOS App 全部源码 + XcodeGen 工程
@@ -163,40 +164,49 @@ xcrun devicectl device install app --device <手机UDID> \
 2. node + DOM stub + ECharts SSR：跑页面主脚本抓异常（harness 模式见 git 历史 498e005 前后）。
 3. 模拟器 Safari + `#锚点` 直达图表区截图。
 
+## 文档同步与接力规则（强制）
+
+1. **每次修改后都更新文档**：代码、模板、数据逻辑或页面布局修改后，必须在同一提交中更新本文件；用户可见功能、命令、数据源或输出文件变化时，同时更新 `README.md`。
+2. 每次台账至少写清：修改日期与目的、涉及文件、验证命令与结果、遗留问题、对应提交号。自动数据提交可简记，功能性提交不得只写“已完成”。
+3. 严格区分**本地生成/浏览器验证**与**GitHub Pages 线上复核**；未实际检查的线上页面、接口或数据日期不得写成“正常”或“已更新”。
+4. 网页改动必须同步模板与生成页；数据抓取失败、使用既有缓存、验证范围受限等情况必须明确记录，供下一位 Agent 接续。
+
 ## 提交前检查清单
 
-- [ ] 网页 4 文件（2 模板 + 2 生成页）同步修改，node --check 通过
+- [ ] 网页 4 文件（2 模板 + 2 生成页）同步修改，node --check 通过；实时页改动单独检查
 - [ ] App 模拟器构建通过、截图确认图表区/图例/滑块渲染正常
 - [ ] 改了数据逻辑 → 确认 Actions workflow 的 cron/命令不需要同步调整
-- [ ] 更新本文件 + README.md
+- [ ] **文档已同步**：按上方规则更新本文件，必要时更新 README.md，并记录验证边界
 - [ ] push 带重试循环，确认 `main -> main` 再收工
 
 ## 当前状态（2026-11-18 更新）
 
-- **2026-11-18 功能更新完成**（用户要求 7 项优化）:
-  1. COT 持仓分位数卡片 (1/3/5 年窗口, 极端值 🔴/🟢 提醒)
-  2. 技术分析页新增 RSI(14) / KDJ(9,3,3) / ATR(14) 三个面板
-  3. COT 与金价背离信号自动标注 (顶背离/底背离, 最近 12 个)
-  4. 持仓页与技术分析页时间区间联动 (localStorage 共享)
-  5. 两页均支持导出 PNG (ECharts toolbox) 和导出 CSV (可视区间数据)
-  6. 网页深色模式 (CSS 变量 + ECharts 配色, 跟随系统自动切换)
-  7. COT 周报推送 (Bark/Telegram, GitHub Actions 每周五自动执行)
-- **2026-11-18 深色模式修正完成**：实时行情页补齐主题支持，三页右上角均可手动
-  切换深色/浅色，`goldCotTheme=auto|dark|light` 跨页保存；系统深色时也能手动
-  覆盖为浅色。正文、次要文字、图表标题/图例/坐标轴/dataZoom/tooltip 均使用
-  动态高对比配色。注意 `applyTheme(..., false)` 首次只初始化不重绘，避免在
-  `CHART_COLORS` 或 `chart` 初始化前触发 TDZ/空对象错误；模板页改后必须重新生成。
-- **2026-11-18 技术分析页顶部布局修正**：K 线周期控制区使用 `.period-group`
-  独占一行；主题按钮移出导航组，放到右侧状态区之后，与另外两页的位置一致。
-- **2026-11-18 持仓页顶部布局修正**：主题按钮同样移出导航组，通过
-  `.header > .theme-btn { margin-left:auto }` 固定在顶行最右侧；顶部 flex
-  对齐方式与技术分析页统一。
-- 线上（GitHub Pages）：三页正常（持仓看板 / 技术分析 / 实时行情）。
-  COT 最新报告 **2026-10-13**；COMEX 日K 到 **2026-10-19**；
-  美元指数到 2026-10-19；上金 T+D 到 2026-10-19；
-  沪金期权 PCR 共 645 条；美国 GLD PCR 750 条到 2026-10-16。
-- App：真机免费签名版已于 **2026-10-08 过期**；如需继续使用需重新构建安装
-  （命令见上文"iOS App 开发与安装"）。
-- 待办：TestFlight 上架（免 7 天签名烦恼）、
-  `brew install xcodegen`（本机 XcodeGen.zip 是坏文件）。
+### 今日修改台账
+
+| 提交 | 修改内容 | 主要涉及文件 |
+|---|---|---|
+| `208e19f` | 完成 7 项功能：COT 1/3/5 年净持仓分位数、RSI/KDJ/ATR、COT 与金价背离、跨页时间区间联动、PNG/CSV 导出、深色模式、Bark/Telegram 周报推送 | `gold_cot.py`、`dashboard_template.html`、`dashboard_ta_template.html`、两份生成页、`.github/workflows/update.yml`、`run.sh`、相关数据文件 |
+| `54e5ffa` | 用更新后的流水线重新生成持仓看板及行情数据 | `dashboard.html`、`data/cot_data.json`、`data/dxy_daily.json`、`data/rt_charts.js`、`data/rt_quotes.js`、`data/ta_data.js`、`data/ta_ohlc.json` |
+| `b5de8b7` | 三页补齐深色/浅色手动切换，修复深色下正文、辅助文字和图表配色对比度；主题以 `goldCotTheme=auto|dark|light` 跨页保存 | `dashboard_template.html`、`dashboard_ta_template.html`、两份生成页、`realtime.html`、相关数据文件 |
+| `4dd8882` | 技术分析页 K 线周期控制区独占一行；主题按钮移出导航组并放到右侧状态区之后 | `dashboard_ta_template.html`、`dashboard_ta.html`、相关行情数据文件 |
+| `cc3f246` | 持仓页主题按钮移出导航组，通过 `.header > .theme-btn { margin-left:auto }` 固定在顶行最右侧，顶行布局与其他页面统一 | `dashboard_template.html`、`dashboard.html`、相关数据文件 |
+
+主题实现注意：`applyTheme(..., false)` 首次只初始化不重绘，避免在 `CHART_COLORS` 或 `chart` 初始化前触发 TDZ/空对象错误；模板修改后必须重新生成对应 HTML。
+
+### 本地生成与验证（2026-11-18）
+
+- 持仓页：**6 个面板、17 个序列**；技术分析页：**7 个面板、23 个序列**；实时行情页：**9 个序列**。
+- 三页深色/浅色切换均已做本地浏览器验证；本次捕获的 **23 个请求均返回 HTTP 200**。
+- 本地生成数据：COT 最新报告 **2026-11-10**，共 **528 期**；沪金期权 PCR 共 **646 条**。
+- 本次仅同步文档，不重新生成 HTML，也不把上述本地结果当作线上复核结果。
+
+### 数据源与线上状态
+
+- 数据生成时观察到东方财富连接中断，以及 Yahoo **403 / SSL EOF**；页面使用既有缓存。上述异常仍需后续排查，不能据此声称在线数据源已恢复或实时数据已核验。
+- GitHub Pages 三页（持仓看板 / 技术分析 / 实时行情）**本轮未复核**；旧台账中的线上“正常”及 2026-10 月数据日期不再作为当前状态引用。线上以 Actions 实际提交和页面复核为准。
+
+### App 与待办
+
+- App：真机免费签名版已于 **2026-10-08 过期**；如需继续使用需重新构建安装（命令见上文“iOS App 开发与安装”）。
+- 待办：复核 GitHub Pages 三页及 Actions 最新运行；排查东方财富/Yahoo 抓取异常；TestFlight 上架（免 7 天签名烦恼）；`brew install xcodegen`（本机 XcodeGen.zip 是坏文件）。
 - 待确认：`barchart.com/stocks` 52 周数据页面显示问题（用户提过，需确认具体页面）。
