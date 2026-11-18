@@ -40,8 +40,8 @@
     background: var(--bg); color: var(--text); padding: 20px;
   }
   .container { width: 100%; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start;
-            gap: 16px; flex-wrap: wrap; }
+  .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .header > .theme-btn { margin-left: auto; }
   h1 { font-size: 22px; margin-bottom: 4px; }
   .subtitle { color: var(--text-secondary); font-size: 13px; margin-bottom: 16px; }
   .pagelink {
@@ -148,8 +148,8 @@
       <span class="navpill active">持仓看板</span>
       <a class="navpill" href="dashboard_ta.html">技术分析</a>
       <a class="navpill" href="realtime.html">实时行情</a>
-      <button class="theme-btn" id="themeBtn" title="切换深色/浅色模式">🌙 深色</button>
     </div>
+    <button class="theme-btn" id="themeBtn" title="切换深色/浅色模式">🌙 深色</button>
   </div>
 
   <div class="cards" id="cards"></div>
