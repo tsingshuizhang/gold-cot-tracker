@@ -38,6 +38,17 @@ jobs:
           python gold_cot.py dashboard --weeks 520 2>&1 | tee data/last_update.log
           exit ${PIPESTATUS[0]}
 
+      # COT 周报推送: 每周五 15:30 ET 发布后 (北京时间周六早上) 执行
+      - name: 推送 COT 周报摘要 (Bark / Telegram)
+        if: success()
+        continue-on-error: true
+        env:
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python gold_cot.py notify
+
       - name: 提交更新后的数据文件(含运行日志)
         if: always()
         run: |

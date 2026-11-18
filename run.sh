@@ -9,6 +9,7 @@
 #   ./run.sh chart 156       生成持仓走势图
 #   ./run.sh dashboard 520   生成交互看板 dashboard.html + dashboard_ta.html
 #   ./run.sh ta 520          只刷新技术分析页行情(增量, 不抓 COT 数据)
+#   ./run.sh notify          推送最新 COT 周报摘要 (需配置 BARK_KEY 或 TELEGRAM)
 #   ./run.sh all             全部执行(默认 156 周)
 # ============================================================
 
@@ -65,6 +66,7 @@ case "$choice" in
        command -v open >/dev/null 2>&1 && open dashboard.html ;;
     5) "$PY" gold_cot.py ta --weeks 520 ;;
     6) "$PY" gold_cot.py all --weeks 156 ;;
-    7) echo "已退出"; exit 0 ;;
+    7) "$PY" gold_cot.py notify ;;
+    8) echo "已退出"; exit 0 ;;
     *) echo "[错误] 无效选择: $choice"; exit 1 ;;
 esac

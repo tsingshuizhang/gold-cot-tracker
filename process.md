@@ -171,20 +171,22 @@ xcrun devicectl device install app --device <手机UDID> \
 - [ ] 更新本文件 + README.md
 - [ ] push 带重试循环，确认 `main -> main` 再收工
 
-## 当前状态
+## 当前状态（2026-11-18 更新）
 
-- 线上（GitHub Pages）：两页图表/手机端图例/区间标签/时间复位/离线 ECharts 全部正常；
-  COT 卡片以 CFTC 报告日期 2026-09-22 为主；
-  技术分析页顶部实时报价条正常；COMEX 日频 K线已追平至 **2026-09-30**，
-  之前卡在 9/28 是因为 `gold_cot.py` 漏 `import re` 导致 `ta_data.js` 生成失败；
-  **新增 `realtime.html` 贵金属实时行情页**，展示伦敦金/COMEX/上金 T+D，每 10 秒刷新。
-- App：真机版已更新至 2026-10-01 晚构建（约 10/8 到期）：
-  DataStore 读统一数据源 + **东财直连 10 秒轮询实时报价**; 三个 Tab:
-  持仓看板(含实时报价条) / 技术分析(MA100) / **实时行情(RealtimeView, 与网页 realtime.html 同功能)**。
-  待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）、brew install xcodegen。
-- GitHub Actions `update.yml`：已加失败日志捕获并升级 action 版本；
-  **2026-10-01 根因已定位：`gold_cot.py` 新增 `fetch_sina_quotes()` 时漏了 `import re`，
-  导致 `build_ta_data()` 抛 NameError，技术分析页 `ta_data.js` 写不出来，
-  所以页面 K线卡在 9/28；已补 `import re`。**
-- 待处理（用户新提）：`barchart.com/stocks` 52 周数据页面显示问题（需确认是哪个项目/页面）。
-- 待办（用户提过）：COT 周报推送通知、TestFlight 上架（免 7 天签名烦恼）。
+- **2026-11-18 功能更新完成**（用户要求 7 项优化）:
+  1. COT 持仓分位数卡片 (1/3/5 年窗口, 极端值 🔴/🟢 提醒)
+  2. 技术分析页新增 RSI(14) / KDJ(9,3,3) / ATR(14) 三个面板
+  3. COT 与金价背离信号自动标注 (顶背离/底背离, 最近 12 个)
+  4. 持仓页与技术分析页时间区间联动 (localStorage 共享)
+  5. 两页均支持导出 PNG (ECharts toolbox) 和导出 CSV (可视区间数据)
+  6. 网页深色模式 (CSS 变量 + ECharts 配色, 跟随系统自动切换)
+  7. COT 周报推送 (Bark/Telegram, GitHub Actions 每周五自动执行)
+- 线上（GitHub Pages）：三页正常（持仓看板 / 技术分析 / 实时行情）。
+  COT 最新报告 **2026-10-13**；COMEX 日K 到 **2026-10-19**；
+  美元指数到 2026-10-19；上金 T+D 到 2026-10-19；
+  沪金期权 PCR 共 645 条；美国 GLD PCR 750 条到 2026-10-16。
+- App：真机免费签名版已于 **2026-10-08 过期**；如需继续使用需重新构建安装
+  （命令见上文"iOS App 开发与安装"）。
+- 待办：TestFlight 上架（免 7 天签名烦恼）、
+  `brew install xcodegen`（本机 XcodeGen.zip 是坏文件）。
+- 待确认：`barchart.com/stocks` 52 周数据页面显示问题（用户提过，需确认具体页面）。

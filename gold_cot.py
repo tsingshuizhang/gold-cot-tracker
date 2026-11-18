@@ -937,6 +937,69 @@ def fetch_sge_ohlc(weeks: int):
     return {"rows": rows, "approx": False}
 
 
+def calc_rsi(closes: list, period: int = 14) -> list:
+    """RSI(period): 相对强弱指数。"""
+    if len(closes) < period + 1:
+        return [None] * len(closes)
+    rsi = [None] * len(closes)
+    gains, losses = [], []
+    for i in range(1, period + 1):
+        ch = closes[i] - closes[i - 1]
+        gains.append(max(ch, 0))
+        losses.append(max(-ch, 0))
+    avg_gain = sum(gains) / period
+    avg_loss = sum(losses) / period
+    rsi[period] = 100 - 100 / (1 + avg_gain / avg_loss) if avg_loss else 100
+    for i in range(period + 1, len(closes)):
+        ch = closes[i] - closes[i - 1]
+        gain, loss = max(ch, 0), max(-ch, 0)
+        avg_gain = (avg_gain * (period - 1) + gain) / period
+        avg_loss = (avg_loss * (period - 1) + loss) / period
+        rsi[i] = 100 - 100 / (1 + avg_gain / avg_loss) if avg_loss else 100
+    return [round(v, 2) if v is not None else None for v in rsi]
+
+
+def calc_kdj(rows: list, n: int = 9, k: int = 3, d: int = 3) -> dict:
+    """KDJ(n,k,d): 随机指标。rows = [[date, open, close, high, low], ...]"""
+    if len(rows) < n:
+        return {"k": [None] * len(rows), "d": [None] * len(rows),
+                "j": [None] * len(rows)}
+    k_arr, d_arr, j_arr = [None] * len(rows), [None] * len(rows), [None] * len(rows)
+    k_prev, d_prev = 50.0, 50.0
+    for i in range(n - 1, len(rows)):
+        window = rows[i - n + 1:i + 1]
+        low_n = min(r[4] for r in window)
+        high_n = max(r[3] for r in window)
+        close = rows[i][2]
+        rsv = (close - low_n) / (high_n - low_n) * 100 if high_n != low_n else 50
+        k_val = (k_prev * (k - 1) + rsv) / k
+        d_val = (d_prev * (d - 1) + k_val) / d
+        j_val = 3 * k_val - 2 * d_val
+        k_arr[i] = round(k_val, 2)
+        d_arr[i] = round(d_val, 2)
+        j_arr[i] = round(j_val, 2)
+        k_prev, d_prev = k_val, d_val
+    return {"k": k_arr, "d": d_arr, "j": j_arr}
+
+
+def calc_atr(rows: list, period: int = 14) -> list:
+    """ATR(period): 平均真实波幅。rows = [[date, open, close, high, low], ...]"""
+    if len(rows) < period + 1:
+        return [None] * len(rows)
+    atr = [None] * len(rows)
+    trs = []
+    for i in range(1, len(rows)):
+        high, low, prev_close = rows[i][3], rows[i][4], rows[i - 1][2]
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        trs.append(tr)
+    if len(trs) < period:
+        return atr
+    atr[period] = round(sum(trs[:period]) / period, 2)
+    for i in range(period + 1, len(rows)):
+        atr[i] = round((atr[i - 1] * (period - 1) + trs[i - 1]) / period, 2)
+    return atr
+
+
 def write_rt_charts(quotes: dict, weeks: int = 52) -> None:
     """写出实时行情页图表数据 data/rt_charts.js。"""
     gc_rows = _load_ohlc_cache(TA_OHLC_CACHE, (datetime.now() - timedelta(
@@ -950,11 +1013,21 @@ def write_rt_charts(quotes: dict, weeks: int = 52) -> None:
         ratio = (sge_last_q / gc_last_q) if sge_last_q and gc_last_q else None
         if ratio:
             sge = {"rows": _scale_ohlc(gc_rows, ratio), "approx": True}
+    # COMEX 技术指标 (RSI/KDJ/ATR)
+    indicators = {}
+    if gc_rows:
+        closes = [r[2] for r in gc_rows]
+        indicators = {
+            "rsi14": calc_rsi(closes, 14),
+            "kdj": calc_kdj(gc_rows, 9, 3, 3),
+            "atr14": calc_atr(gc_rows, 14),
+        }
     charts = {
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "xau": xau,
         "gc": {"rows": gc_rows, "approx": False},
         "sge": sge,
+        "indicators": indicators,
     }
     (DATA_DIR / "rt_charts.js").write_text(
         "window.RT_CHARTS = " + json.dumps(charts, ensure_ascii=False) + ";\n",
@@ -1405,6 +1478,74 @@ def cmd_latest(weeks: int = 2) -> None:
         print_latest_legacy(legacy[0])
 
 
+def _send_bark(title: str, body: str, url: str = "") -> bool:
+    """通过 Bark 推送 iOS 通知。需设置环境变量 BARK_KEY 或 BARK_URL。"""
+    bark_url = os.environ.get("BARK_URL", "")
+    if not bark_url:
+        key = os.environ.get("BARK_KEY", "")
+        if not key:
+            return False
+        bark_url = f"https://api.day.app/{key}"
+    try:
+        payload = {"title": title, "body": body}
+        if url:
+            payload["url"] = url
+        req = urllib.request.Request(
+            bark_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"  [推送] Bark 失败: {e}")
+        return False
+
+
+def _send_telegram(text: str) -> bool:
+    """通过 Telegram Bot 推送。需设置 TELEGRAM_BOT_TOKEN 和 TELEGRAM_CHAT_ID。"""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+        req = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as e:
+        print(f"  [推送] Telegram 失败: {e}")
+        return False
+
+
+def cmd_notify() -> None:
+    """抓取最新 COT 并推送摘要到 Bark / Telegram。"""
+    disagg, _ = load_history(2, with_legacy=False)
+    latest = disagg[0]
+    prev = disagg[1] if len(disagg) > 1 else None
+    net = latest["mm_net"]
+    wow = net - prev["mm_net"] if prev else 0
+    title = f"黄金 COT 周报 {latest['report_date']}"
+    body = (f"管理基金净持仓: {net:+,} 手\n"
+            f"周环比: {wow:+,} 手\n"
+            f"总持仓: {latest['open_interest']:,} 手\n"
+            f"净多占比: {net/latest['open_interest']*100:.1f}%")
+    url = "https://tsingshuizhang.github.io/gold-cot-tracker/dashboard.html"
+    sent = False
+    if _send_bark(title, body, url):
+        print("  [推送] Bark 已发送")
+        sent = True
+    if _send_telegram(f"<b>{title}</b>\n{body}\n<a href='{url}'>查看看板</a>"):
+        print("  [推送] Telegram 已发送")
+        sent = True
+    if not sent:
+        print("  [推送] 未配置推送渠道 (BARK_KEY/BARK_URL 或 TELEGRAM_BOT_TOKEN+TELEGRAM_CHAT_ID)")
+        print(f"  报告内容:\n{title}\n{body}")
+
+
 def cmd_history(weeks: int) -> None:
     disagg, legacy = load_history(weeks)
     save_csv(disagg, DATA_DIR / "gold_cot_disaggregated.csv")
@@ -1507,6 +1648,53 @@ def cmd_ta(weeks: int) -> None:
           " 也可点\"刷新数据\"按钮手动刷新")
 
 
+def calc_percentiles(values: list, current: float) -> dict:
+    """计算当前值在过去 1/3/5 年窗口中的分位数 (百分比)。"""
+    result = {}
+    for name, window in (("1y", 52), ("3y", 156), ("5y", 260)):
+        subset = values[-window:] if len(values) >= window else values
+        if not subset:
+            result[name] = None
+            continue
+        count = sum(1 for v in subset if v <= current)
+        result[name] = round(count / len(subset) * 100, 1)
+    return result
+
+
+def detect_cot_divergence(cot: list, price: list, lookback: int = 26) -> list:
+    """检测 COT 管理基金净持仓与金价的背离信号。
+    返回 [{d: 日期, type: 'bearish'|'bullish', text: 描述}, ...]
+    顶背离: 净持仓创 lookback 周新低, 但金价未创新低 → 看跌
+    底背离: 净持仓创 lookback 周新高, 但金价未创新高 → 看涨
+    """
+    if not cot or not price:
+        return []
+    pmap = {p[0]: p[1] for p in price}
+    signals = []
+    n = len(cot)
+    for i in range(lookback, n):
+        window = cot[i - lookback:i + 1]
+        cur = cot[i]
+        d = cur["d"]
+        p = pmap.get(d)
+        if p is None:
+            continue
+        nets = [w["net"] for w in window]
+        prices = [pmap[w["d"]] for w in window if w["d"] in pmap]
+        if len(prices) < lookback // 2:
+            continue
+        # 顶背离: 净持仓新低, 金价未新低
+        if cur["net"] == min(nets) and p > min(prices) * 1.02:
+            signals.append({"d": d, "type": "bearish",
+                            "text": "COT顶背离: 净持仓创新低但金价未创新低"})
+        # 底背离: 净持仓新高, 金价未新高
+        elif cur["net"] == max(nets) and p < max(prices) * 0.98:
+            signals.append({"d": d, "type": "bullish",
+                            "text": "COT底背离: 净持仓创新高但金价未创新高"})
+    # 只保留最近 12 个信号, 避免图表过密
+    return signals[-12:]
+
+
 def cmd_dashboard(weeks: int) -> None:
     """生成可交互的 HTML 看板: 持仓页 dashboard.html + 技术分析页 dashboard_ta.html。"""
     disagg, _ = load_history(weeks, with_legacy=False)
@@ -1536,6 +1724,13 @@ def cmd_dashboard(weeks: int) -> None:
                   else fetch_price_pairs("GC=F", "101.GC00Y", weeks, "黄金价格"))
     dxy_data = fetch_dxy_pairs_incremental(weeks)
 
+    # 管理基金净持仓分位数 (1/3/5 年窗口)
+    net_values = [r["net"] for r in cot_data]
+    percentiles = calc_percentiles(net_values, net_values[-1]) if net_values else {}
+
+    # COT 与金价背离信号 (近 26 周窗口)
+    divergence = detect_cot_divergence(cot_data, price_data)
+
     # 黄金期权 PCR: 沪金期权(上期所官方, 主源) + 美国 GLD 期权(Yahoo, best-effort)
     print("正在抓取黄金期权 PCR ...")
     pcr_shfe = fetch_shfe_pcr_incremental(weeks)
@@ -1561,6 +1756,10 @@ def cmd_dashboard(weeks: int) -> None:
                         json.dumps(price_data, ensure_ascii=False))
     html = html.replace("/*__PCR_DATA__*/null",
                         json.dumps(pcr_data, ensure_ascii=False))
+    html = html.replace("/*__PERCENTILE_DATA__*/null",
+                        json.dumps(percentiles, ensure_ascii=False))
+    html = html.replace("/*__DIVERGENCE_DATA__*/null",
+                        json.dumps(divergence, ensure_ascii=False))
 
     out = BASE_DIR / "dashboard.html"
     out.write_text(html, encoding="utf-8")
@@ -1595,10 +1794,10 @@ def main() -> None:
         description="黄金 CFTC COT 持仓报告抓取工具")
     parser.add_argument("command",
                         choices=["latest", "history", "chart", "dashboard",
-                                 "ta", "all"],
+                                 "ta", "all", "notify"],
                         help="latest=最新报告 history=保存CSV chart=出图 "
                              "dashboard=交互看板(持仓+技术分析两页) "
-                             "ta=只刷新技术分析页行情 all=全部")
+                             "ta=只刷新技术分析页行情 all=全部 notify=推送周报")
     parser.add_argument("--weeks", type=int, default=156,
                         help="抓取最近多少周的数据 (默认 156 周 ≈ 3 年)")
     args = parser.parse_args()
@@ -1613,6 +1812,8 @@ def main() -> None:
         cmd_dashboard(args.weeks)
     elif args.command == "ta":
         cmd_ta(args.weeks)
+    elif args.command == "notify":
+        cmd_notify()
     else:
         cmd_all(args.weeks)
 

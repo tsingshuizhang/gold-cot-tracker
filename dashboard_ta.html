@@ -12,12 +12,24 @@
 <title>COMEX 黄金技术分析</title>
 <script src="echarts.min.js"></script>   <!-- 本地内置, 离线/断网可用 -->
 <style>
+  :root {
+    --bg: #f5f6fa; --card-bg: #fff; --text: #2c3e50; --text-secondary: #7f8c8d;
+    --text-muted: #95a5a6; --border: #dcdde1; --shadow: rgba(0,0,0,.06);
+    --grid-border: rgba(0,0,0,.10); --split-line: #e3e7ee; --axis-label: #8a94a6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a2e; --card-bg: #16213e; --text: #eee; --text-secondary: #a0a0c0;
+      --text-muted: #707090; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
+      --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #707090;
+    }
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* 自然流布局: 每个图形有舒适的固定高度, 超出视口时页面滚动 */
   html, body { height: auto; }
   body {
     font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    background: #f5f6fa; color: #2c3e50; padding: 20px;
+    background: var(--bg); color: var(--text); padding: 20px;
   }
   .container { width: 100%; }
   .header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
@@ -42,8 +54,8 @@
   .status { margin-left: auto; display: flex; align-items: center; gap: 12px;
             font-size: 12px; color: #95a5a6; flex-wrap: wrap; }
   .quote-bar {
-    background: #fff; border-radius: 10px; padding: 12px 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px;
+    background: var(--card-bg); border-radius: 10px; padding: 12px 16px;
+    box-shadow: 0 1px 4px var(--shadow); margin-bottom: 12px;
     display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
   }
   .quote-item { display: flex; align-items: baseline; gap: 8px; }
@@ -53,21 +65,21 @@
   .quote-time { font-size: 11px; color: #95a5a6; margin-left: auto; }
   .up { color: #c0392b; } .down { color: #27ae60; }
   .btn {
-    border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
-    padding: 5px 14px; font-size: 13px; cursor: pointer; color: #2c3e50;
+    border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px;
+    padding: 5px 14px; font-size: 13px; cursor: pointer; color: var(--text);
     transition: all .15s;
   }
   .btn:hover { border-color: #f39c12; color: #f39c12; }
   .btn.active { background: #f39c12; border-color: #f39c12; color: #fff; }
   .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .group .glabel { font-size: 13px; color: #7f8c8d; }
+  .group .glabel { font-size: 13px; color: var(--text-secondary); }
   #chart {
-    background: #fff; border-radius: 10px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    background: var(--card-bg); border-radius: 10px;
+    box-shadow: 0 1px 4px var(--shadow);
     width: 100%;
     height: 1122px;   /* JS 按面板舒适高度重算 */
   }
-  .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+  .note { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.7; }
   .note-short { display: none; }
 
   #zoomlabel { text-align: center; font-size: 11px; color: #95a5a6; margin-top: 4px; min-height: 14px; }
@@ -187,6 +199,17 @@ const COLORS = {
   ma60: '#27ae60', ma100: '#8e44ad', ma120: '#9b59b6', ma250: '#7f8c8d',
   gold: '#f39c12', cost: '#16a085', ratio: '#c0392b',
   dif: '#e74c3c', dea: '#2980b9',
+};
+
+// 深色模式检测与 ECharts 配色
+const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+const CHART_COLORS = {
+  text: isDark ? '#a0a0c0' : '#7f8c8d',
+  axisLabel: isDark ? '#707090' : '#8a94a6',
+  splitLine: isDark ? '#2a2a4a' : '#e3e7ee',
+  gridBorder: isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,0.10)',
+  tooltipBg: isDark ? '#16213e' : '#fff',
+  tooltipText: isDark ? '#eee' : '#2c3e50',
 };
 
 // ---------------- 指标计算 ----------------
@@ -350,17 +373,17 @@ function render(ta) {
   const narrow = window.innerWidth < 768 || window.innerHeight < 500;
 
   // ---- 面板布局: 每面板固定舒适高度, 高度优先于铺满窗口 (与持仓页一致) ----
-  const PANEL_H = [360, 240, 180, 220];                // 4 面板舒适高度
+  const PANEL_H = [360, 240, 180, 220, 180, 180, 160];  // 7 面板舒适高度
   const titleH = narrow ? 16 : 20;
   const gap = narrow ? 18 : 22;
   // 底部预留 36px 给时间滑轨, 避免与最后一面板重叠
-  const totalH = titleH * 4 + PANEL_H.reduce((a, b) => a + b, 0)
-                 + gap * 3 + 36;
+  const totalH = titleH * 7 + PANEL_H.reduce((a, b) => a + b, 0)
+                 + gap * 6 + 36;
   document.getElementById('chart').style.height = totalH + 'px';
   const layout = [];
   {
     let y = 0;
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 7; i++) {
       layout.push({ titleTop: y,
                     gridTop: y + titleH,
                     gridH: PANEL_H[i] - titleH - 6 });
@@ -373,6 +396,7 @@ function render(ta) {
     'COMEX 黄金K线': 'K线', 'BOLL 上轨': '上轨', 'BOLL 中轨': '中轨',
     'BOLL 下轨': '下轨', '收盘价': '收盘',
     '平均开采成本 AISC': 'AISC 成本', '金价/AISC 比值': '比值', 'MACD 柱': '柱',
+    'RSI14': 'RSI', 'ATR14': 'ATR',
   };
   const mkLegend = (data, i) => ({
     data,
@@ -430,6 +454,17 @@ function render(ta) {
 
   const option = {
     animation: false,
+    toolbox: {
+      feature: {
+        saveAsImage: { title: '导出 PNG', name: 'gold_ta_' + (ohlc[ohlc.length-1]||[''])[0] },
+        myExportCSV: {
+          show: true, title: '导出 CSV', icon: 'path://M4,2 L20,2 L20,22 L4,22 Z M8,6 L16,6 M8,10 L16,10 M8,14 L16,14 M8,18 L12,18',
+          onclick: () => exportCSV()
+        }
+      },
+      right: 20, top: 0, iconStyle: { borderColor: '#7f8c8d' },
+      emphasis: { iconStyle: { borderColor: '#f39c12' } }
+    },
     title: [
       { text: 'K线 + 布林带(20,2) + 斐波那契回撤位', left: 60,
         top: layout[0].titleTop, textStyle: { fontSize: narrow ? 10 : 13 } },
@@ -441,11 +476,18 @@ function render(ta) {
       { text: 'MACD(12, 26, 9) — 金叉 / 死叉 / 顶背离 / 底背离',
         left: 60, top: layout[3].titleTop,
         textStyle: { fontSize: narrow ? 10 : 13 } },
+      { text: 'RSI(14) — 相对强弱指数', left: 60, top: layout[4].titleTop,
+        textStyle: { fontSize: narrow ? 10 : 13 } },
+      { text: 'KDJ(9, 3, 3) — 随机指标', left: 60, top: layout[5].titleTop,
+        textStyle: { fontSize: narrow ? 10 : 13 } },
+      { text: 'ATR(14) — 平均真实波幅', left: 60, top: layout[6].titleTop,
+        textStyle: { fontSize: narrow ? 10 : 13 } },
     ],
     tooltip: {
       trigger: 'axis',
       confine: true,          // 浮框限制在图表区域内, 避免手机上超出屏幕
-      textStyle: { fontSize: narrow ? 10 : 12 },
+      backgroundColor: CHART_COLORS.tooltipBg,
+      textStyle: { color: CHART_COLORS.tooltipText, fontSize: narrow ? 10 : 12 },
       axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] },
       formatter(params) {
         const d = new Date(params[0].axisValue);
@@ -472,39 +514,51 @@ function render(ta) {
       mkLegend(['收盘价'].concat(maDefs.map(([n]) => 'MA' + n)), 1),
       mkLegend(['COMEX 金价', '平均开采成本 AISC', '金价/AISC 比值'], 2),
       mkLegend(['DIF', 'DEA', 'MACD 柱'], 3),
+      mkLegend(['RSI14'], 4),
+      mkLegend(['K', 'D', 'J'], 5),
+      mkLegend(['ATR14'], 6),
     ],
-    grid: [0, 1, 2, 3].map(i => ({
+    grid: [0, 1, 2, 3, 4, 5, 6].map(i => ({
       left: 60, right: 48,
       top: layout[i].gridTop, height: layout[i].gridH,
       // 面板边框: 让每个图形区域边界明确, 不与相邻面板混叠
-      show: true, borderColor: 'rgba(0,0,0,0.10)', borderWidth: 1,
+      show: true, borderColor: CHART_COLORS.gridBorder, borderWidth: 1,
     })),
-    xAxis: [0, 1, 2, 3].map(i => ({
-      type: 'time', gridIndex: i, show: i === 3,
+    xAxis: [0, 1, 2, 3, 4, 5, 6].map(i => ({
+      type: 'time', gridIndex: i, show: i === 6,
       axisLabel: { hideOverlap: true },
     })),
     yAxis: [
       { scale: true, gridIndex: 0, splitNumber: 4,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 1, splitNumber: 4,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 2, splitNumber: 3,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 2, position: 'right', min: 0,
         splitNumber: 3,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
         splitLine: { show: false } },
       { scale: true, gridIndex: 3, splitNumber: 3,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
+      { scale: true, gridIndex: 4, min: 0, max: 100, splitNumber: 4,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
+      { scale: true, gridIndex: 5, splitNumber: 3,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
+      { scale: true, gridIndex: 6, splitNumber: 3,
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
     ],
     dataZoom: [
-      { type: 'inside', xAxisIndex: [0, 1, 2, 3],
+      { type: 'inside', xAxisIndex: [0, 1, 2, 3, 4, 5, 6],
         minValueSpan: MIN_SPAN_MS[period] },
-      { type: 'slider', xAxisIndex: [0, 1, 2, 3], bottom: 8,
+      { type: 'slider', xAxisIndex: [0, 1, 2, 3, 4, 5, 6], bottom: 8,
         height: narrow ? 26 : 22,
         minValueSpan: MIN_SPAN_MS[period] },
     ],
@@ -570,6 +624,41 @@ function render(ta) {
         markLine: { silent: true, symbol: 'none', animation: false,
           lineStyle: { color: '#bdc3c7', width: 0.8 },
           data: [{ yAxis: 0 }], label: { show: false } } },
+      // 图5: RSI(14)
+      { name: 'RSI14', type: 'line', xAxisIndex: 4, yAxisIndex: 5,
+        data: pair((ta.indicators && ta.indicators.rsi14) || []),
+        showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.3, color: '#9b59b6' },
+        itemStyle: { color: '#9b59b6' },
+        markLine: { silent: true, symbol: 'none', animation: false,
+          lineStyle: { color: '#bdc3c7', type: 'dashed', width: 0.8 },
+          label: { fontSize: 10 },
+          data: [{ yAxis: 70, label: { formatter: '超买 70' } },
+                 { yAxis: 30, label: { formatter: '超卖 30' } },
+                 { yAxis: 50, label: { formatter: '50' } }] } },
+      // 图6: KDJ(9,3,3)
+      { name: 'K', type: 'line', xAxisIndex: 5, yAxisIndex: 6,
+        data: pair((ta.indicators && ta.indicators.kdj && ta.indicators.kdj.k) || []),
+        showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.3, color: '#e67e22' },
+        itemStyle: { color: '#e67e22' } },
+      { name: 'D', type: 'line', xAxisIndex: 5, yAxisIndex: 6,
+        data: pair((ta.indicators && ta.indicators.kdj && ta.indicators.kdj.d) || []),
+        showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.3, color: '#3498db' },
+        itemStyle: { color: '#3498db' } },
+      { name: 'J', type: 'line', xAxisIndex: 5, yAxisIndex: 6,
+        data: pair((ta.indicators && ta.indicators.kdj && ta.indicators.kdj.j) || []),
+        showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.3, color: '#e74c3c' },
+        itemStyle: { color: '#e74c3c' } },
+      // 图7: ATR(14)
+      { name: 'ATR14', type: 'line', xAxisIndex: 6, yAxisIndex: 7,
+        data: pair((ta.indicators && ta.indicators.atr14) || []),
+        showSymbol: false, connectNulls: false,
+        lineStyle: { width: 1.3, color: '#16a085' },
+        itemStyle: { color: '#16a085' },
+        areaStyle: { color: 'rgba(22,160,133,0.1)' } },
     ],
   };
   // 保留时间滑块选中区间: 60秒自动刷新重绘时不能重置用户选的区间
@@ -581,6 +670,16 @@ function render(ta) {
       { type: 'dataZoom', start: dzKeep[0].start, end: dzKeep[0].end });
   }
   updateZoomLabel();
+  // 联动: 恢复持仓看板保存的时间区间 (仅首次加载时)
+  if (!window.__zoomRestored) {
+    window.__zoomRestored = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem('goldCotZoom') || 'null');
+      if (saved && typeof saved.start === 'number') {
+        chart.dispatchAction({ type: 'dataZoom', start: saved.start, end: saved.end });
+      }
+    } catch (e) {}
+  }
 }
 
 // 时间复位: 恢复完整时间范围 (与 iOS App 双击滑块同功能)
@@ -609,6 +708,10 @@ chart.on('datazoom', () => {
   });
   chart.setOption({ series: [{ id: 'kline',
     markLine: fibMarkLine(visible) }] });
+  // 联动: 保存当前时间区间供持仓看板恢复
+  try {
+    localStorage.setItem('goldCotZoom', JSON.stringify({ start: dz.start, end: dz.end }));
+  } catch (e) {}
 });
 
 // ---------------- 实时行情条 (东方财富 JSONP, 每 10 秒刷新) ----------------
@@ -733,7 +836,7 @@ async function loadData(manual) {
     return;
   }
   lastUpdated = updated;
-  render({ ohlc: ohlc, cost: ta.cost || [] });
+  render({ ohlc: ohlc, cost: ta.cost || [], indicators: charts.indicators || {} });
   renderQuotes((window.RT_QUOTES && window.RT_QUOTES.quotes) || {});
   elStatus.textContent = '数据更新于 ' + updated + ' · 每 '
       + AUTO_REFRESH_SEC + ' 秒自动检查';
@@ -741,6 +844,40 @@ async function loadData(manual) {
 
 document.getElementById('refreshBtn')
     .addEventListener('click', () => loadData(true));
+
+// 导出当前可视区间 CSV (含技术指标)
+function exportCSV() {
+  const dz = chart.getOption().dataZoom[0];
+  const rows = currentOHLC;
+  if (!rows.length) return;
+  const t0 = new Date(rows[0][0]).getTime();
+  const t1 = new Date(rows[rows.length - 1][0]).getTime();
+  const span = t1 - t0;
+  const vs = t0 + span * dz.start / 100;
+  const ve = t0 + span * dz.end / 100;
+  const visible = rows.filter(r => {
+    const t = new Date(r[0]).getTime();
+    return t >= vs - 86400000 && t <= ve + 86400000;
+  });
+  const ind = (chartData && chartData.indicators) || {};
+  const kdj = ind.kdj || {};
+  const header = '日期,开盘,收盘,最高,最低,RSI14,K,D,J,ATR14';
+  const lines = visible.map(r => {
+    const i = rows.indexOf(r);
+    return [r[0], r[1], r[2], r[3], r[4],
+            ind.rsi14 ? ind.rsi14[i] : '',
+            kdj.k ? kdj.k[i] : '', kdj.d ? kdj.d[i] : '', kdj.j ? kdj.j[i] : '',
+            ind.atr14 ? ind.atr14[i] : ''].join(',');
+  });
+  const csv = '﻿' + header + '\n' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gold_ta_' + (visible[0] ? visible[0][0] : 'data') + '_' + period + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // K 线周期切换: 日K / 周K / 月K
 document.querySelectorAll('[data-period]').forEach(btn => {

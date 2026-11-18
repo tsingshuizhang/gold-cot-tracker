@@ -12,12 +12,24 @@
 <title>黄金 CFTC COT 持仓看板</title>
 <script src="echarts.min.js"></script>   <!-- 本地内置, 离线/断网可用 -->
 <style>
+  :root {
+    --bg: #f5f6fa; --card-bg: #fff; --text: #2c3e50; --text-secondary: #7f8c8d;
+    --text-muted: #95a5a6; --border: #dcdde1; --shadow: rgba(0,0,0,.06);
+    --grid-border: rgba(0,0,0,.10); --split-line: #e3e7ee; --axis-label: #8a94a6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a2e; --card-bg: #16213e; --text: #eee; --text-secondary: #a0a0c0;
+      --text-muted: #707090; --border: #2a2a4a; --shadow: rgba(0,0,0,.3);
+      --grid-border: rgba(255,255,255,.12); --split-line: #2a2a4a; --axis-label: #707090;
+    }
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* 自然流布局: 每个图形有舒适的固定高度, 超出视口时页面滚动 */
   html, body { height: auto; }
   body {
     font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-    background: #f5f6fa; color: #2c3e50; padding: 20px;
+    background: var(--bg); color: var(--text); padding: 20px;
   }
   .container { width: 100%; }
   .header { display: flex; justify-content: space-between; align-items: flex-start;
@@ -47,36 +59,36 @@
 
   .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .card {
-    background: #fff; border-radius: 10px; padding: 14px 18px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06); flex: 1; min-width: 180px;
+    background: var(--card-bg); border-radius: 10px; padding: 14px 18px;
+    box-shadow: 0 1px 4px var(--shadow); flex: 1; min-width: 180px;
   }
-  .card .label { font-size: 12px; color: #95a5a6; margin-bottom: 6px; }
+  .card .label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
   .card .value { font-size: 22px; font-weight: 600; }
   .card .delta { font-size: 12px; margin-top: 4px; }
   .up { color: #c0392b; } .down { color: #27ae60; }
 
   .toolbar {
-    background: #fff; border-radius: 10px; padding: 12px 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 12px;
+    background: var(--card-bg); border-radius: 10px; padding: 12px 16px;
+    box-shadow: 0 1px 4px var(--shadow); margin-bottom: 12px;
     display: flex; gap: 24px; flex-wrap: wrap; align-items: center;
   }
   .group { display: flex; align-items: center; gap: 8px; }
-  .group .glabel { font-size: 13px; color: #7f8c8d; }
+  .group .glabel { font-size: 13px; color: var(--text-secondary); }
   .btn {
-    border: 1px solid #dcdde1; background: #fff; border-radius: 6px;
-    padding: 5px 14px; font-size: 13px; cursor: pointer; color: #2c3e50;
+    border: 1px solid var(--border); background: var(--card-bg); border-radius: 6px;
+    padding: 5px 14px; font-size: 13px; cursor: pointer; color: var(--text);
     transition: all .15s;
   }
   .btn:hover { border-color: #f39c12; color: #f39c12; }
   .btn.active { background: #f39c12; border-color: #f39c12; color: #fff; }
 
   #chart {
-    background: #fff; border-radius: 10px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    background: var(--card-bg); border-radius: 10px;
+    box-shadow: 0 1px 4px var(--shadow);
     width: 100%;
     height: 1346px;   /* JS 按面板舒适高度重算 */
   }
-  .note { font-size: 12px; color: #95a5a6; margin-top: 10px; line-height: 1.7; }
+  .note { font-size: 12px; color: var(--text-muted); margin-top: 10px; line-height: 1.7; }
   .note-short { display: none; }
 
   #zoomlabel { text-align: center; font-size: 11px; color: #95a5a6; margin-top: 4px; min-height: 14px; }
@@ -179,6 +191,8 @@ const PRICE = /*__PRICE_DATA__*/null;
 const DXY = /*__DXY_DATA__*/null;
 // {shfe: [[日期, 成交量PCR, 持仓量PCR], ...], comex: [[日期, PCR], ...]}
 const PCR = /*__PCR_DATA__*/null;
+const PERCENTILE = /*__PERCENTILE_DATA__*/null;
+const DIVERGENCE = /*__DIVERGENCE_DATA__*/null;
 // ============================================
 
 let dim = 'week';
@@ -241,6 +255,17 @@ const COLORS = {
   oth: '#9b59b6', nr: '#7f8c8d', gold: '#f39c12', dxy: '#16a085',
 };
 
+// 深色模式检测与 ECharts 配色
+const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+const CHART_COLORS = {
+  text: isDark ? '#a0a0c0' : '#7f8c8d',
+  axisLabel: isDark ? '#707090' : '#8a94a6',
+  splitLine: isDark ? '#2a2a4a' : '#e3e7ee',
+  gridBorder: isDark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,0.10)',
+  tooltipBg: isDark ? '#16213e' : '#fff',
+  tooltipText: isDark ? '#eee' : '#2c3e50',
+};
+
 function keyOf(d, dim) {
   const y = d.slice(0, 4), m = d.slice(5, 7);
   if (dim === 'month') return y + '-' + m;
@@ -292,7 +317,16 @@ function renderCards() {
       <div class="delta" style="color:#95a5a6">${pubStr} 发布</div></div>
     <div class="card"><div class="label">管理基金净持仓 (手)</div>
       <div class="value ${last.net >= 0 ? 'up' : 'down'}">${last.net >= 0 ? '+' : ''}${fmt(last.net)}</div>
-      <div class="delta">${deltaHtml(wow)}</div></div>
+      <div class="delta">${deltaHtml(wow)}</div>
+      ${PERCENTILE && PERCENTILE['1y'] != null ? `
+      <div class="delta" style="margin-top:6px;font-size:11px;color:#7f8c8d">
+        分位数: 1年 <b>${PERCENTILE['1y']}%</b> · 3年 <b>${PERCENTILE['3y']}%</b> · 5年 <b>${PERCENTILE['5y']}%</b>
+        ${Math.max(PERCENTILE['1y'], PERCENTILE['3y'], PERCENTILE['5y']) >= 90 ?
+          '<span style="color:#c0392b;font-weight:600"> 🔴 极度拥挤</span>' :
+          Math.min(PERCENTILE['1y'], PERCENTILE['3y'], PERCENTILE['5y']) <= 10 ?
+          '<span style="color:#27ae60;font-weight:600"> 🟢 极度冷清</span>' : ''}
+      </div>` : ''}
+    </div>
     <div class="card"><div class="label">散户/非报告净持仓 (手)</div>
       <div class="value ${last.nr >= 0 ? 'up' : 'down'}">${last.nr >= 0 ? '+' : ''}${fmt(last.nr)}</div>
       <div class="delta">${deltaHtml(prev ? last.nr - prev.nr : null)}</div></div>
@@ -425,6 +459,17 @@ function render() {
 
   const option = {
     animation: false,
+    toolbox: {
+      feature: {
+        saveAsImage: { title: '导出 PNG', name: 'gold_cot_' + (RAW[RAW.length-1]||{}).d },
+        myExportCSV: {
+          show: true, title: '导出 CSV', icon: 'path://M4,2 L20,2 L20,22 L4,22 Z M8,6 L16,6 M8,10 L16,10 M8,14 L16,14 M8,18 L12,18',
+          onclick: () => exportCSV()
+        }
+      },
+      right: 20, top: 0, iconStyle: { borderColor: '#7f8c8d' },
+      emphasis: { iconStyle: { borderColor: '#f39c12' } }
+    },
     title: [
       { text: '管理基金(机构大资金)净持仓' + (price ? ' vs 金价' : ''),
         left: 60, top: layout[0].titleTop,
@@ -443,6 +488,8 @@ function render() {
     animation: false,
     tooltip: {
       trigger: 'axis',
+      backgroundColor: CHART_COLORS.tooltipBg,
+      textStyle: { color: CHART_COLORS.tooltipText, fontSize: narrow ? 10 : 12 },
       axisPointer: { type: 'cross', link: [{ xAxisIndex: 'all' }] },
       formatter(params) {
         const d = new Date(params[0].axisValue);
@@ -469,7 +516,7 @@ function render() {
       left: 60, right: 48,
       top: layout[i].gridTop, height: layout[i].gridH,
       // 面板边框: 让每个图形区域边界明确, 不与相邻面板混叠
-      show: true, borderColor: 'rgba(0,0,0,0.10)', borderWidth: 1,
+      show: true, borderColor: CHART_COLORS.gridBorder, borderWidth: 1,
     })),
     xAxis: [0, 1, 2, 3, 4, 5].map(i => ({
       type: 'time', gridIndex: i, show: i === 4 || i === 5,
@@ -477,32 +524,32 @@ function render() {
     })),
     yAxis: [
       { scale: true, gridIndex: 0, splitNumber: 4,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 0, position: 'right',
         show: !!price, splitNumber: 4,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
         splitLine: { show: false } },
       { scale: true, gridIndex: 1, splitNumber: 3,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 2, splitNumber: 3,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 3, splitNumber: 3,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 4, splitNumber: 4,
         show: !!price,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
       { scale: true, gridIndex: 4, position: 'right',
         show: !!dxy, splitNumber: 4,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
         splitLine: { show: false } },
       { scale: true, gridIndex: 5, min: 0, splitNumber: 4,
-        axisLabel: { fontSize: narrow ? 9 : 10, color: '#8a94a6' },
-        splitLine: { lineStyle: { type: 'dashed', color: '#e3e7ee' } } },
+        axisLabel: { fontSize: narrow ? 9 : 10, color: CHART_COLORS.axisLabel },
+        splitLine: { lineStyle: { type: 'dashed', color: CHART_COLORS.splitLine } } },
     ],
     dataZoom: [
       { type: 'inside', xAxisIndex: [0, 1, 2, 3, 4, 5] },
@@ -513,7 +560,16 @@ function render() {
       // 图1: 管理基金净持仓 + 金价
       { name: '管理基金净持仓', type: 'bar', xAxisIndex: 0, yAxisIndex: 0,
         data: toPair('net'), barMaxWidth: 14,
-        itemStyle: { color: p => p.value[1] >= 0 ? COLORS.mm : COLORS.pm } },
+        itemStyle: { color: p => p.value[1] >= 0 ? COLORS.mm : COLORS.pm },
+        markPoint: {
+          data: (DIVERGENCE || []).map(s => ({
+            coord: [s.d, 0],
+            value: s.type === 'bearish' ? '顶背离' : '底背离',
+            itemStyle: { color: s.type === 'bearish' ? '#c0392b' : '#27ae60' },
+            label: { fontSize: 10, color: '#fff', backgroundColor: s.type === 'bearish' ? '#c0392b' : '#27ae60', padding: [2, 4], borderRadius: 3 }
+          })),
+          symbol: 'pin', symbolSize: 36
+        } },
       ...(price ? [{
         name: 'COMEX 金价', type: 'line', xAxisIndex: 0, yAxisIndex: 1,
         data: price, showSymbol: false,
@@ -610,6 +666,16 @@ function render() {
     }
   }
   updateZoomLabel();
+  // 联动: 恢复技术分析页保存的时间区间 (仅首次加载时)
+  if (!window.__zoomRestored) {
+    window.__zoomRestored = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem('goldCotZoom') || 'null');
+      if (saved && typeof saved.start === 'number') {
+        chart.dispatchAction({ type: 'dataZoom', start: saved.start, end: saved.end });
+      }
+    } catch (e) {}
+  }
 }
 
 document.querySelectorAll('[data-dim]').forEach(btn => {
@@ -632,7 +698,14 @@ document.querySelectorAll('[data-range]').forEach(btn => {
 // 尺寸变化时重绘: 桌面/手机布局(图例显隐)随宽度切换
 // 图例切换: 记住状态; PCR 恰好单独显示一条时给轨道序列灌数据, 否则清空。
 // 只更新序列数据, 不整体重绘 —— 整体 notMerge 重建会打乱 echarts legend 的开关状态机。
-chart.on('datazoom', updateZoomLabel);
+chart.on('datazoom', () => {
+  updateZoomLabel();
+  // 联动: 保存当前时间区间供技术分析页恢复
+  try {
+    const dz = chart.getOption().dataZoom[0];
+    localStorage.setItem('goldCotZoom', JSON.stringify({ start: dz.start, end: dz.end }));
+  } catch (e) {}
+});
 chart.on('legendselectchanged', e => {
   legendSel = e.selected;
   const vol = e.selected['沪金期权成交量 PCR'] !== false && lastPcrVol.length > 0;
@@ -662,6 +735,34 @@ window.addEventListener('resize', () => {
 });
 // 字体加载完成后尺寸可能再变, load 时再校正一次
 window.addEventListener('load', () => { chart.resize(); render(); });
+
+// 导出当前可视区间 CSV
+function exportCSV() {
+  const dz = chart.getOption().dataZoom[0];
+  const rows = aggregate(RAW, dim);
+  if (!rows.length) return;
+  const t0 = new Date(rows[0].d).getTime();
+  const t1 = new Date(rows[rows.length - 1].d).getTime();
+  const span = t1 - t0;
+  const vs = t0 + span * dz.start / 100;
+  const ve = t0 + span * dz.end / 100;
+  const visible = rows.filter(r => {
+    const t = new Date(r.d).getTime();
+    return t >= vs - 86400000 && t <= ve + 86400000;
+  });
+  const header = '日期,管理基金净持仓,管理基金多头,管理基金空头,总持仓,生产商净持仓,掉期商净持仓,其他报告净持仓,散户净持仓';
+  const lines = visible.map(r =>
+    [r.d, r.net, r.lo, r.sh, r.oi, r.pm, r.sw, r.oth, r.nr].join(','));
+  const csv = '﻿' + header + '\n' + lines.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gold_cot_' + (visible[0] ? visible[0].d : 'data') + '_' + dim + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 render();
 </script>
 </body>
