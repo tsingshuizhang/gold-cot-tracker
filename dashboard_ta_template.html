@@ -83,6 +83,7 @@
   .btn:hover { border-color: #f39c12; color: #f39c12; }
   .btn.active { background: #f39c12; border-color: #f39c12; color: #fff; }
   .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .period-group { flex-basis: 100%; }
   .group .glabel { font-size: 13px; color: var(--text-secondary); }
   #chart {
     background: var(--card-bg); border-radius: 10px;
@@ -124,18 +125,18 @@
       <a class="navpill" href="dashboard.html">持仓看板</a>
       <span class="navpill active">技术分析</span>
       <a class="navpill" href="realtime.html">实时行情</a>
-      <button class="theme-btn" id="themeBtn" title="切换深色/浅色模式">🌙 深色</button>
     </div>
-    <div class="group">
+    <div class="status">
+      <span id="updated">数据加载中...</span>
+      <button class="btn" id="refreshBtn">刷新数据</button>
+    </div>
+    <button class="theme-btn" id="themeBtn" title="切换深色/浅色模式">🌙 深色</button>
+    <div class="group period-group">
       <span class="glabel">K线周期</span>
       <button class="btn active" data-period="day">日K</button>
       <button class="btn" data-period="week">周K</button>
       <button class="btn" data-period="month">月K</button>
       <button class="btn" id="zoomReset" title="时间范围复位">时间复位</button>
-    </div>
-    <div class="status">
-      <span id="updated">数据加载中...</span>
-      <button class="btn" id="refreshBtn">刷新数据</button>
     </div>
   </div>
 
