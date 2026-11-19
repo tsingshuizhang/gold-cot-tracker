@@ -206,6 +206,7 @@ xcrun devicectl device process launch --device 00008150-001129390E62401C \
 | `b5de8b7` | 三页补齐深色/浅色手动切换，修复深色下正文、辅助文字和图表配色对比度；主题以 `goldCotTheme=auto|dark|light` 跨页保存 | `dashboard_template.html`、`dashboard_ta_template.html`、两份生成页、`realtime.html`、相关数据文件 |
 | `4dd8882` | 技术分析页 K 线周期控制区独占一行；主题按钮移出导航组并放到右侧状态区之后 | `dashboard_ta_template.html`、`dashboard_ta.html`、相关行情数据文件 |
 | `cc3f246` | 持仓页主题按钮移出导航组，通过 `.header > .theme-btn { margin-left:auto }` 固定在顶行最右侧，顶行布局与其他页面统一 | `dashboard_template.html`、`dashboard.html`、相关数据文件 |
+| `965fb1e` | 原生 App 同步三页主题/刷新、分位数与背离、RSI/KDJ/ATR、CSV/PNG 导出；新增主屏幕图标并同步工程配置 | `app/Sources/`、`app/Sources/Assets.xcassets/`、`app/project.yml`、pbxproj、`README.md`、`process.md` |
 
 主题实现注意：`applyTheme(..., false)` 首次只初始化不重绘，避免在 `CHART_COLORS` 或 `chart` 初始化前触发 TDZ/空对象错误；模板修改后必须重新生成对应 HTML。
 
