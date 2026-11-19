@@ -312,8 +312,11 @@ xcrun devicectl device process launch --device 00008150-001129390E62401C \
 - **真机构建与验签**：`artifacts/build-device-ui-regression.log` 以 `** BUILD SUCCEEDED **` 结束；
   `inspect_app.py` 确认为 iOS device 包，Bundle ID `com.tsingshuizhang.GoldCotTracker`、
   版本 1.0 (1)、最低 iOS 17.0；`codesign --verify --deep --strict` 通过。
-- **安装状态与边界**：首次 `devicectl` 安装返回 CoreDeviceError **4016**（设备当前无可用
-  usage assertion），需用户解锁并保持亮屏后重试；本段将在重试后更新。模拟器真实合成触摸已通过，
-  但不能替代真机触控、性能和画面验收。本轮未修改网页或数据流水线，也未复核 GitHub Pages。
-- **对应提交**：功能、测试与说明文档为 `c6f903d`（`test: add native UI regression coverage`）；
-  本验证台账的提交号见随后 docs 提交。
+- **安装结果与边界**：首次 `devicectl` 安装返回 CoreDeviceError **4016**；用户确认已解锁、
+  保持亮屏并连接 Mac 后重试，`devicectl device install app` 返回 **App installed**，随后
+  `devicectl device process launch --terminate-existing` 返回启动成功，完整输出见
+  `artifacts/device-install-ui-regression-unlocked.log`。这只证明真机签名、安装和进程启动；
+  真机画面、触控和性能仍需用户人工确认，不能由模拟器结果外推。本轮未修改网页或数据流水线，
+  也未复核 GitHub Pages。
+- **对应提交**：功能、测试与说明文档为 `c6f903d`（`test: add native UI regression coverage`），
+  首轮验证台账为 `5637898`；本次真机安装结果回填的提交号见随后 docs 提交。
