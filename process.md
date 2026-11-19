@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-11-20（会话：iOS 功能同步、主屏幕图标修复与真机更新）。
+> 零成本接续。最后更新：2026-11-20（会话：iOS 实时行情时间轴缩放、持仓背离标注防重叠与真机更新）。
 
 ## 一句话项目
 
@@ -256,3 +256,33 @@ xcrun devicectl device process launch --device 00008150-001129390E62401C \
 - 待办：在手机上人工确认主屏幕图标、三页主题/刷新和导出；处理模拟器预览归属后再验收新版；
   复核 GitHub Pages 三页及 Actions 最新运行；排查东方财富/Yahoo 抓取异常；考虑 TestFlight 避免 7 天签名限制。
 - 待确认：`barchart.com/stocks` 52 周数据页面显示问题（用户提过，需确认具体页面）。
+
+### App 实时缩放与背离标注防叠字（2026-11-20）
+
+- **目的**：实时行情页按时间轴缩放；修复手机持仓看板在周/月/季/年切换后，零轴附近
+  “顶背离 / 底背离”等文字堆叠的问题。
+- **源码修改**：`TAView.swift` 的 `RealtimeView` 新增规范化 `range`、共享时间域 `window`
+  和可视 OHLC；K 线与 MACD 使用同一时间窗口，底部 `RangeSlider` 支持拖动两端缩放、
+  双击复位，切换品种保留规范化区间。`ChartViews.swift` 保留全部可见信号圆点，
+  文字仅从最近 4 个候选中选显，要求至少 44 px 水平间距，并将顶背离/底背离分别置于
+  信号点上方/下方；文字位置同时限制在绘图区内。
+- **对应提交**：待本批功能提交后回填。
+- **构建**：环境检查 `ios --purpose build --json` 返回 `status=pass`，macOS 与 Xcode 27.2 ready。
+  实时缩放的模拟器/真机构建分别见 `artifacts/build-simulator-realtime-zoom.log`、
+  `artifacts/build-device-realtime-zoom.log`；加入标注布局后的模拟器/真机构建分别见
+  `artifacts/build-simulator-marker-layout.log`、`artifacts/build-device-marker-layout.log`。
+  四次构建均以 `** BUILD SUCCEEDED **` 结束。
+- **模拟器**：新版通过技能助手安装并启动到 `B37F7564-27C6-49CA-9F77-674BE2AD2F6D`，
+  Bundle ID `com.tsingshuizhang.GoldCotTracker`，版本 1.0 (1)。已实际查看
+  `artifacts/ios-marker-layout.png`：默认“周”页面正常，管理基金净持仓图信号点保留，
+  右侧仅见一个置于零轴下方的“底背离”文字，未见此前多处文字堆叠。此项只是当前画面证据，
+  不能外推为所有周期均已通过真实切换验收。
+- **交互限制**：原生 UI 自动化点按“月”虽返回成功，但随后的 UI 快照中“周”仍为 1、“月”仍为 0，
+  画面未证明发生切换，已停止重复该路径。浏览器预览标签页存在，但截图和 WebMCP 状态均返回
+  `IN_APP_BROWSER_TAB_NOT_VISIBLE`，因此未通过浏览器执行触摸。实时页滑块视觉、拖动手势及
+  周/月/季/年实际切换仍未自动验收；代码连线与构建结果不能替代手势验证。
+- **真机**：最终版 `codesign --verify --deep --strict` 通过；`devicectl` 已将同一真机包安装到
+  `00008150-001129390E62401C` 并以 `--terminate-existing` 成功启动，完整输出见
+  `artifacts/device-install-marker-layout.log`。这仅证明签名、安装和进程启动，真机画面、
+  周期切换和实时缩放手势仍需用户人工确认。
+- 本批截图、安装输出和构建日志仅本地留痕，不纳入版本库；未重新复核 GitHub Pages。

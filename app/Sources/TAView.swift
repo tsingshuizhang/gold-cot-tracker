@@ -300,6 +300,7 @@ struct RealtimeView: View {
     @EnvironmentObject private var store: DataStore
     @State private var selected = "gc"
     @State private var hiddenMACD: Set<String> = []
+    @State private var range: ClosedRange<Double> = 0...1
 
     private let timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
@@ -333,7 +334,28 @@ struct RealtimeView: View {
         return rows
     }
 
-    private var closes: [Double] { ohlc.map(\.close) }
+    /// K 线与 MACD 共用同一时间窗口；规范化区间在切换品种时仍可复用。
+    private var domain: ClosedRange<Date>? {
+        let dates = ohlc.map(\.date)
+        guard let lo = dates.min(), let hi = dates.max(), hi > lo else { return nil }
+        return lo...hi
+    }
+
+    private var window: ClosedRange<Date>? {
+        domain.map { Date().window(range, in: $0) }
+    }
+
+    private var visibleOhlc: [Ohlc] {
+        guard let window else { return ohlc }
+        return ohlc.filter { window.contains($0.date) }
+    }
+
+    private var closes: [Double] { visibleOhlc.map(\.close) }
+
+    private var windowLabel: String {
+        guard let window else { return "暂无可用时间区间" }
+        return "\(DateUtil.short.string(from: window.lowerBound)) ~ \(DateUtil.short.string(from: window.upperBound))"
+    }
 
     // MARK: 子视图
 
@@ -379,23 +401,23 @@ struct RealtimeView: View {
     }
 
     private var candlePanel: some View {
-        let rows = ohlc
+        let rows = visibleOhlc
         return Panel(title: "\(names[selected] ?? "") 日K", height: 320) {
             CandleChartView(ohlc: rows, boll: Indicators.boll(closes),
-                            fibs: Indicators.fibLevels(rows), xDomain: nil)
+                            fibs: Indicators.fibLevels(rows), xDomain: window)
         }
     }
 
     private var macdPanel: some View {
         let m = Indicators.macd(closes)
-        let dates = ohlc.map(\.date)
+        let dates = visibleOhlc.map(\.date)
         return Panel(title: "MACD(12, 26, 9)", height: 200) {
             VStack(spacing: 4) {
                 LegendToggle(items: [("DIF", .red), ("DEA", .blue), ("MACD 柱", C.mm)],
                              hidden: $hiddenMACD)
                 MacdCanvas(dates: dates, hist: m.hist, dif: m.dif, dea: m.dea,
                            crosses: [], hidden: hiddenMACD, height: 168,
-                           xDomain: nil)
+                           xDomain: window)
             }
         }
     }
@@ -408,6 +430,9 @@ struct RealtimeView: View {
                 cards
                 candlePanel
                 macdPanel
+                if domain != nil {
+                    RangeSlider(range: $range, label: windowLabel)
+                }
                 Text("每 10 秒自动刷新实时报价 · 更新于 \(store.quotes.first?.time ?? "--")")
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.top, 4)

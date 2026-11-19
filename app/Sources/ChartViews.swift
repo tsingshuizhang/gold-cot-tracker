@@ -475,17 +475,24 @@ struct MultiLineCanvas: View {
                             ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.secondary),
                                      at: CGPoint(x: padL + plotW - 2, y: y), anchor: .trailing)
                         }
-                        // 信号全部画圆点；仅最近 6 个可见信号显示文字，避免遮挡。
+                        // 保留全部信号点；文字只取最近 4 个候选，并做水平碰撞检测。
                         let visibleMarkers = markers.filter { $0.date >= dLo && $0.date <= dHi }
                         for marker in visibleMarkers {
                             let pt = CGPoint(x: X(marker.date), y: YL(marker.value))
                             ctx.fill(Path(CGRect(x: pt.x - 3.5, y: pt.y - 3.5, width: 7, height: 7)),
                                      with: .color(marker.color))
                         }
-                        for marker in visibleMarkers.suffix(6) {
-                            let pt = CGPoint(x: X(marker.date), y: YL(marker.value))
+                        var lastLabelX: CGFloat = -.infinity
+                        for marker in visibleMarkers.suffix(4) {
+                            let rawX = X(marker.date)
+                            let labelX = min(max(rawX, padL + 22), padL + plotW - 22)
+                            guard labelX - lastLabelX >= 44 else { continue }
+                            let offset: CGFloat = marker.label == "底背离" ? 12 : -12
+                            let labelY = min(max(YL(marker.value) + offset, padT + 6),
+                                             size.height - padB - 6)
                             ctx.draw(Text(marker.label).font(.system(size: 8)).foregroundColor(marker.color),
-                                     at: CGPoint(x: pt.x, y: pt.y - 10))
+                                     at: CGPoint(x: labelX, y: labelY))
+                            lastLabelX = labelX
                         }
                         // 十字光标: 竖线 + 各序列圆点
                         if inspecting, let px = press?.x {
