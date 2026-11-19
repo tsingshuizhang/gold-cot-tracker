@@ -266,7 +266,8 @@ xcrun devicectl device process launch --device 00008150-001129390E62401C \
   双击复位，切换品种保留规范化区间。`ChartViews.swift` 保留全部可见信号圆点，
   文字仅从最近 4 个候选中选显，要求至少 44 px 水平间距，并将顶背离/底背离分别置于
   信号点上方/下方；文字位置同时限制在绘图区内。
-- **对应提交**：待本批功能提交后回填。
+- **对应提交**：功能与说明文档为 `ead1320`（`fix: improve iOS chart zoom and marker layout`）；
+  本验证台账的提交号回填见随后 docs 提交。
 - **构建**：环境检查 `ios --purpose build --json` 返回 `status=pass`，macOS 与 Xcode 27.2 ready。
   实时缩放的模拟器/真机构建分别见 `artifacts/build-simulator-realtime-zoom.log`、
   `artifacts/build-device-realtime-zoom.log`；加入标注布局后的模拟器/真机构建分别见
