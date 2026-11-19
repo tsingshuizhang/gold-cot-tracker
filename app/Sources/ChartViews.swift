@@ -66,6 +66,7 @@ func fmt(_ v: Double) -> String {
 struct RangeSlider: View {
     @Binding var range: ClosedRange<Double>
     var label: String? = nil            // 当前选中区间文字 (如 2016-10 ~ 2026-09)
+    var accessibilityID: String = "rangeSlider"
     private let minSpan = 0.05
     private let thumb: CGFloat = 20
     private let pad: CGFloat = 44   // 滑轨行高 (整行可拖)
@@ -83,6 +84,7 @@ struct RangeSlider: View {
                 Text(label)
                     .font(.caption2).foregroundColor(.secondary)
                     .lineLimit(1)
+                    .accessibilityIdentifier("\(accessibilityID).label")
             }
             sliderBody
         }
@@ -153,11 +155,15 @@ struct RangeSlider: View {
         }
         .frame(height: pad)  // 显式高度: 防止在 ScrollView 内无限伸展
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
+        // 与 minimumDistance: 0 的拖动手势并行识别，避免普通 tap 手势被拖动抢占。
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
             // 双击复位: 恢复完整时间范围
             liveLo = nil; liveHi = nil; active = nil
             range = 0...1
-        }
+        })
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("时间范围滑块")
+        .accessibilityIdentifier(accessibilityID)
         .padding(.horizontal)
     }
 }

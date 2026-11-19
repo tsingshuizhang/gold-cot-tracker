@@ -16,6 +16,7 @@
 		BB0000000000000000000107 /* TAView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* TAView.swift */; };
 		BB0000000000000000000108 /* CandleChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* CandleChartView.swift */; };
 		BB0000000000000000000109 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* Assets.xcassets */; };
+		BB0000000000000000000110 /* GoldCotTrackerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000010 /* GoldCotTrackerUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,10 +31,29 @@
 		BB0000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB0000000000000000000090 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB00000000000000000000F0 /* GoldCotTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GoldCotTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB00000000000000000000F1 /* GoldCotTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GoldCotTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB0000000000000000000010 /* GoldCotTrackerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoldCotTrackerUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXContainerItemProxy section */
+		BB0000000000000000000801 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BB0000000000000000000400 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BB0000000000000000000401;
+			remoteInfo = GoldCotTracker;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		BB0000000000000000000201 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB0000000000000000000211 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -48,6 +68,7 @@
 			children = (
 				BB0000000000000000000302 /* Sources */,
 				BB0000000000000000000303 /* Generated */,
+				BB0000000000000000000304 /* UITests */,
 				BB0000000000000000000301 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -56,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				BB00000000000000000000F0 /* GoldCotTracker.app */,
+				BB00000000000000000000F1 /* GoldCotTrackerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -84,6 +106,14 @@
 			path = Generated;
 			sourceTree = "<group>";
 		};
+		BB0000000000000000000304 /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				BB0000000000000000000010 /* GoldCotTrackerUITests.swift */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXResourcesBuildPhase section */
@@ -92,6 +122,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				BB0000000000000000000109 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB0000000000000000000212 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -115,6 +152,24 @@
 			productReference = BB00000000000000000000F0 /* GoldCotTracker.app */;
 			productType = "com.apple.product-type.application";
 		};
+		BB0000000000000000000402 /* GoldCotTrackerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BB0000000000000000000503 /* Build configuration list for PBXNativeTarget "GoldCotTrackerUITests" */;
+			buildPhases = (
+				BB0000000000000000000210 /* Sources */,
+				BB0000000000000000000211 /* Frameworks */,
+				BB0000000000000000000212 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				BB0000000000000000000701 /* PBXTargetDependency */,
+			);
+			name = GoldCotTrackerUITests;
+			productName = GoldCotTrackerUITests;
+			productReference = BB00000000000000000000F1 /* GoldCotTrackerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -127,6 +182,10 @@
 				TargetAttributes = {
 					BB0000000000000000000401 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					BB0000000000000000000402 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = BB0000000000000000000401;
 					};
 				};
 			};
@@ -145,6 +204,7 @@
 			projectRoot = "";
 			targets = (
 				BB0000000000000000000401 /* GoldCotTracker */,
+				BB0000000000000000000402 /* GoldCotTrackerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -165,7 +225,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		BB0000000000000000000210 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB0000000000000000000110 /* GoldCotTrackerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		BB0000000000000000000701 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BB0000000000000000000401 /* GoldCotTracker */;
+			targetProxy = BB0000000000000000000801 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		BB0000000000000000000601 /* Debug */ = {
@@ -328,6 +404,50 @@
 			};
 			name = Release;
 		};
+		BB0000000000000000000605 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsingshuizhang.GoldCotTrackerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = GoldCotTracker;
+			};
+			name = Debug;
+		};
+		BB0000000000000000000606 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tsingshuizhang.GoldCotTrackerUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = GoldCotTracker;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -345,6 +465,15 @@
 			buildConfigurations = (
 				BB0000000000000000000603 /* Debug */,
 				BB0000000000000000000604 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BB0000000000000000000503 /* Build configuration list for PBXNativeTarget "GoldCotTrackerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BB0000000000000000000605 /* Debug */,
+				BB0000000000000000000606 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

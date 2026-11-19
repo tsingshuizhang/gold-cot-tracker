@@ -95,6 +95,7 @@ struct DashboardView: View {
                     ForEach(Dim.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
+                .accessibilityIdentifier("dashboard.periodPicker")
                 .padding(.horizontal)
 
                 netPanel

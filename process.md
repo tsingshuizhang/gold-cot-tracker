@@ -287,3 +287,32 @@ xcrun devicectl device process launch --device 00008150-001129390E62401C \
   `artifacts/device-install-marker-layout.log`。这仅证明签名、安装和进程启动，真机画面、
   周期切换和实时缩放手势仍需用户人工确认。
 - 本批截图、安装输出和构建日志仅本地留痕，不纳入版本库；未重新复核 GitHub Pages。
+
+### App 原生 UI 回归与双击复位修复（2026-11-20）
+
+- **目的**：把此前未验收的持仓周期切换、实时页时间轴拖动和双击复位纳入可重复的原生 UI 回归。
+- **源码与工程**：新增 `app/UITests/GoldCotTrackerUITests.swift`；`DashboardView.swift` 增加
+  `dashboard.periodPicker`；`TAView.swift` 增加 `realtime.mainScroll`，实时滑块使用
+  `realtime.rangeSlider`；`ChartViews.swift` 的 `RangeSlider` 支持自定义 accessibility ID 和区间文字标识。
+  `project.yml`、pbxproj 与共享 scheme 已同步加入 `GoldCotTrackerUITests` target。
+- **测试路径修正**：实时页滑块初始位于屏幕下方；普通 `swipeUp()` 在图表区域未造成滚动。
+  测试改为对明确标识的主 ScrollView 右侧边缘执行受控上滑，并先断言滑块 frame 确实移动，
+  再检查可点击性，避免把“未滚动到控件”误判为滑块业务失效。
+- **实际修复**：首次真实拖动已通过，但双击未复位。原因是 `DragGesture(minimumDistance: 0)`
+  的高优先级识别抢占了普通双击手势；现改为 `simultaneousGesture(TapGesture(count: 2))`，
+  保留原有拖动逻辑，让双击与拖动并行识别。
+- **完整回归**：在任务模拟器 `B37F7564-27C6-49CA-9F77-674BE2AD2F6D` 上运行
+  `xcodebuild ... test`，结果包为 `artifacts/ui-regression-final.xcresult`。命令退出码为 0；
+  `xcresulttool get test-results tests` 显示 `testDashboardPeriodSwitching()` 与
+  `testRealtimeRangeZoomAndReset()` 均 **Passed**（2 tests / 0 failures）。单测日志
+  `artifacts/ui-realtime-gesture-fix.log` 以 `** TEST SUCCEEDED **` 结束。
+- **截图复核**：已实际查看 `artifacts/ui-final-contact-sheet.jpg` 及其中 7 张原始截图。
+  持仓页月/季/年/周的选中状态和图形随周期变化；实时页初始、左缩放、右缩放的时间区间文字、
+  K 线和 MACD 同步变化，未见 MACD 图例或指标文字叠在一起。截图只证明对应模拟器画面。
+- **真机构建与验签**：`artifacts/build-device-ui-regression.log` 以 `** BUILD SUCCEEDED **` 结束；
+  `inspect_app.py` 确认为 iOS device 包，Bundle ID `com.tsingshuizhang.GoldCotTracker`、
+  版本 1.0 (1)、最低 iOS 17.0；`codesign --verify --deep --strict` 通过。
+- **安装状态与边界**：首次 `devicectl` 安装返回 CoreDeviceError **4016**（设备当前无可用
+  usage assertion），需用户解锁并保持亮屏后重试；本段将在重试后更新。模拟器真实合成触摸已通过，
+  但不能替代真机触控、性能和画面验收。本轮未修改网页或数据流水线，也未复核 GitHub Pages。
+- **对应提交**：待提交后回填。

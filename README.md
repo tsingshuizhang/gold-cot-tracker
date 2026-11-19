@@ -196,6 +196,24 @@ App 与网页共享 `rt_charts.js`、`rt_quotes.js`、`ta_data.js` 等数据源�
 允许手工同步 pbxproj，并在 `process.md` 留痕。构建、真机安装、签名和验证边界均记录在
 **[process.md](process.md)**。免费 Apple ID 签名的真机包 **7 天过期**，到期需重新构建安装。
 
+### 原生 UI 回归测试
+
+测试源码位于 `app/UITests/GoldCotTrackerUITests.swift`，覆盖：
+
+- 持仓看板依次切换 **月 / 季 / 年 / 周**，验证分段控件真实选中状态并留存截图；
+- 实时行情页滚动到时间轴，分别拖动左右滑块改变日期区间，并在每次缩放后双击复位；
+- 测试截图写入 `.xcresult`，可用 `xcresulttool` 提取检查；`artifacts/` 仅本地留痕，不提交版本库。
+
+```bash
+xcodebuild -project app/GoldCotTracker.xcodeproj \
+  -scheme GoldCotTracker -configuration Debug \
+  -destination 'platform=iOS Simulator,id=<任务模拟器UDID>' \
+  -resultBundlePath artifacts/ui-regression.xcresult \
+  CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES test
+```
+
+模拟器 XCUITest 通过不等于真机触控、性能或视觉效果已验收；真机边界见 `process.md`。
+
 ## COT 周报推送
 
 支持 **Bark** (iOS 推送) 和 **Telegram Bot** 两种渠道, 在 GitHub Actions 每周五

@@ -431,13 +431,15 @@ struct RealtimeView: View {
                 candlePanel
                 macdPanel
                 if domain != nil {
-                    RangeSlider(range: $range, label: windowLabel)
+                    RangeSlider(range: $range, label: windowLabel,
+                                accessibilityID: "realtime.rangeSlider")
                 }
                 Text("每 10 秒自动刷新实时报价 · 更新于 \(store.quotes.first?.time ?? "--")")
                     .font(.caption2).foregroundStyle(.secondary)
                     .padding(.top, 4)
             }
         }
+        .accessibilityIdentifier("realtime.mainScroll")
         .navigationTitle("实时行情")
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
