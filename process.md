@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-11-18（会话：同步功能、主题、布局修改及文档接力规则）。
+> 零成本接续。最后更新：2026-11-20（会话：最新版 iOS App 真机构建、安装与启动）。
 
 ## 一句话项目
 
@@ -179,7 +179,7 @@ xcrun devicectl device install app --device <手机UDID> \
 - [ ] **文档已同步**：按上方规则更新本文件，必要时更新 README.md，并记录验证边界
 - [ ] push 带重试循环，确认 `main -> main` 再收工
 
-## 当前状态（2026-11-18 更新）
+## 当前状态（2026-11-20 更新）
 
 ### 今日修改台账
 
@@ -207,6 +207,10 @@ xcrun devicectl device install app --device <手机UDID> \
 
 ### App 与待办
 
-- App：真机免费签名版已于 **2026-10-08 过期**；如需继续使用需重新构建安装（命令见上文“iOS App 开发与安装”）。
+- **2026-11-20 真机更新完成**：使用当前 `main` 源码构建并安装到用户的 iPhone 17 Pro Max（UDID `00008150-001129390E62401C`），随后通过 `devicectl device process launch --terminate-existing` 启动成功。
+- 本次产物：`GoldCotTracker.app`，Bundle ID `com.tsingshuizhang.GoldCotTracker`，版本 **1.0 (1)**，最低 iOS 17.0；`inspect_app.py` 确认为 iOS 真机 arm64 产物，`codesign --verify --deep --strict` 通过。
+- 描述文件已确认包含该设备，plist 原始 `ExpirationDate` 为 **2026-11-26 17:20:12**；免费签名到期后仍需重新构建安装。
+- 验证边界：本轮已完成真机构建、签名检查、安装和进程启动，**未做手机画面截图或触控交互验证**，不能据此声称各页面功能已在真机逐项验收。
+- 本地验证文件：`build-device.log`、`build-settings-device.json`、`device-app-inspection.json`（仅本地留痕，未纳入版本库）。
 - 待办：复核 GitHub Pages 三页及 Actions 最新运行；排查东方财富/Yahoo 抓取异常；TestFlight 上架（免 7 天签名烦恼）；`brew install xcodegen`（本机 XcodeGen.zip 是坏文件）。
 - 待确认：`barchart.com/stocks` 52 周数据页面显示问题（用户提过，需确认具体页面）。
