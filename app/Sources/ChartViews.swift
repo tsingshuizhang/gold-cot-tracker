@@ -246,6 +246,13 @@ struct CanvasSeries {
     var points: [(Date, Double)]   // 已按窗口过滤+降采样
 }
 
+struct ChartMarker {
+    let date: Date
+    let value: Double
+    let label: String
+    let color: Color
+}
+
 func fmtAxis(_ v: Double) -> String {
     if abs(v) >= 10000 { return String(format: "%.0fk", v / 1000) }
     if abs(v) >= 100 { return String(format: "%.0f", v) }
@@ -334,18 +341,24 @@ struct MultiLineCanvas: View {
     var barName: String? = nil             // 柱序列名 (浮窗显示用)
     var fillFirst: Bool = false            // 首条左轴序列面积填充
     var hLine: (value: Double, label: String)? = nil
+    var hLines: [(value: Double, label: String)] = []  // RSI/KDJ 等多条参考线
+    var markers: [ChartMarker] = []       // COT 背离等信号标注
     var height: CGFloat
     var xDomain: ClosedRange<Date>? = nil  // 显式 X 轴域; nil = 取数据范围
+    var yDomain: ClosedRange<Double>? = nil // RSI 可固定为 0...100
 
     @State private var press: CGPoint?     // 按压位置
     @State private var inspecting = false  // 长按进入十字光标模式
 
     /// 左轴域 (刻度标签与网格线共用)
     private var leftDom: (lo: Double, hi: Double) {
+        if let yDomain { return (yDomain.lowerBound, yDomain.upperBound) }
         var lv: [Double] = bars.map(\.1)
         for s in left { lv += s.points.map(\.1) }
+        lv += hLines.map(\.value)
+        if let hLine { lv.append(hLine.value) }
         var lo = lv.min() ?? 0, hi = lv.max() ?? 1
-        if !bars.isEmpty || hLine != nil { lo = min(lo, 0); hi = max(hi, hLine?.value ?? 0) }
+        if !bars.isEmpty || hLine != nil { lo = min(lo, 0) }
         let pad = (hi - lo) * 0.08 + 1e-9
         return (lo - pad, hi + pad)
     }
@@ -443,7 +456,7 @@ struct MultiLineCanvas: View {
                                 for s in right { draw(s, YR) }
                             }
                         }
-                        // 基准线 (仅一条文字, 量小留在 Canvas 内)
+                        // 基准线 (少量文字, 与网页参考线一致)
                         if let hl = hLine {
                             let y = YL(hl.value)
                             var p = Path()
@@ -452,6 +465,27 @@ struct MultiLineCanvas: View {
                                        style: StrokeStyle(lineWidth: 0.8, dash: [4, 3]))
                             ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.secondary),
                                      at: CGPoint(x: padL + plotW - 2, y: y), anchor: .trailing)
+                        }
+                        for hl in hLines {
+                            let y = YL(hl.value)
+                            var p = Path()
+                            p.move(to: CGPoint(x: padL, y: y)); p.addLine(to: CGPoint(x: padL + plotW, y: y))
+                            ctx.stroke(p, with: .color(.secondary.opacity(0.65)),
+                                       style: StrokeStyle(lineWidth: 0.7, dash: [4, 3]))
+                            ctx.draw(Text(hl.label).font(.system(size: 8)).foregroundColor(.secondary),
+                                     at: CGPoint(x: padL + plotW - 2, y: y), anchor: .trailing)
+                        }
+                        // 信号全部画圆点；仅最近 6 个可见信号显示文字，避免遮挡。
+                        let visibleMarkers = markers.filter { $0.date >= dLo && $0.date <= dHi }
+                        for marker in visibleMarkers {
+                            let pt = CGPoint(x: X(marker.date), y: YL(marker.value))
+                            ctx.fill(Path(CGRect(x: pt.x - 3.5, y: pt.y - 3.5, width: 7, height: 7)),
+                                     with: .color(marker.color))
+                        }
+                        for marker in visibleMarkers.suffix(6) {
+                            let pt = CGPoint(x: X(marker.date), y: YL(marker.value))
+                            ctx.draw(Text(marker.label).font(.system(size: 8)).foregroundColor(marker.color),
+                                     at: CGPoint(x: pt.x, y: pt.y - 10))
                         }
                         // 十字光标: 竖线 + 各序列圆点
                         if inspecting, let px = press?.x {

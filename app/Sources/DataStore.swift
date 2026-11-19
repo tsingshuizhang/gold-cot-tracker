@@ -14,6 +14,7 @@ final class DataStore: ObservableObject {
     @Published var rtCharts: [String: [Ohlc]] = [:]  // 实时页K线: xau/gc/sge (rt_charts.js)
     @Published var loading = false
     @Published var errorMessage: String?
+    @Published private(set) var lastRefresh: Date?
 
     /// 时间维度聚合 (与网页一致): 周=原始周频; 月/季/年=取周期最后一期
     func cotSeries(dim: Dim) -> [CotRecord] {
@@ -45,11 +46,12 @@ final class DataStore: ObservableObject {
     // MARK: 抓取 (先读本地缓存立即显示, 再联网刷新)
 
     func refresh() async {
+        guard !loading else { return }
         loadCache()
         loading = true
         errorMessage = nil
         dbg.log("refresh start")
-        // 两个数据源互相独立: 一个失败不影响另一个
+        // 各数据源互相独立: 一个失败不影响另一个
         do {
             let data = try await Self.get("\(Self.base)/data/cot_data.json")
             self.cot = try parseCot(data)
@@ -65,6 +67,7 @@ final class DataStore: ObservableObject {
             let p = try parseTa(data)
             // ta_data.js 统一数据源后只含 {updated, cost}; ohlc 走 rt_charts.js 主数据
             self.ta.cost = p.cost
+            if self.ta.updated.isEmpty { self.ta.updated = p.updated }
             if !p.ohlc.isEmpty && self.ta.ohlc.isEmpty { self.ta.ohlc = p.ohlc }
             saveCache(data, name: "ta_data.js")
             dbg.log("ta cost ok: \(self.ta.cost.count)")
@@ -81,6 +84,9 @@ final class DataStore: ObservableObject {
             if !parsed.isEmpty {
                 self.rtCharts = parsed
                 if let gc = parsed["gc"], !gc.isEmpty { self.ta.ohlc = gc }
+                // 该时间戳驱动技术分析页重算；只更新 OHLC 而不更新它会让页面停在旧区间。
+                let raw = try parseJsAssignment(data)
+                self.ta.updated = raw["updated"] as? String ?? ""
             }
             saveCache(data, name: "rt_charts.js")
             dbg.log("rt charts ok: \(self.rtCharts.map { "\($0.key):\($0.value.count)" }.joined(separator: " "))")
@@ -99,6 +105,7 @@ final class DataStore: ObservableObject {
             dbg.log("rt quotes fail: \(error.localizedDescription)")
         }
         loading = false
+        lastRefresh = Date()
         dbg.log("refresh done")
     }
 
@@ -121,11 +128,15 @@ final class DataStore: ObservableObject {
            let parsed = try? parseRtCharts(d), !parsed.isEmpty {
             rtCharts = parsed
             if let gc = parsed["gc"], !gc.isEmpty { ta.ohlc = gc }
+            if let raw = try? parseJsAssignment(d) {
+                ta.updated = raw["updated"] as? String ?? ""
+            }
             dbg.log("rt charts cache: \(parsed.map { "\($0.key):\($0.value.count)" }.joined(separator: " "))")
         }
         if let d = try? Data(contentsOf: Self.cacheURL("ta_data.js")),
            let p = try? parseTa(d) {
             ta.cost = p.cost
+            if ta.updated.isEmpty { ta.updated = p.updated }
             // 旧版 ta_data.js 缓存里还有 ohlc 时兜底用
             if ta.ohlc.isEmpty && !p.ohlc.isEmpty { ta.ohlc = p.ohlc }
         }
@@ -313,8 +324,16 @@ final class DataStore: ObservableObject {
     }
 
     private static func get(_ url: String) async throws -> Data {
-        var req = URLRequest(url: URL(string: url)!)
-        req.timeoutInterval = 30
+        // GitHub Pages 与 URLSession 都可能保留旧响应；主动绕缓存并加时间戳，
+        // 确保手动刷新/回到前台时真正请求最新发布文件。
+        var components = URLComponents(string: url)!
+        var items = components.queryItems ?? []
+        items.append(URLQueryItem(name: "_ts", value: String(Int(Date().timeIntervalSince1970))))
+        components.queryItems = items
+        var req = URLRequest(url: components.url!,
+                             cachePolicy: .reloadIgnoringLocalCacheData,
+                             timeoutInterval: 30)
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else {
             throw URLError(.badServerResponse)

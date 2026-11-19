@@ -174,17 +174,25 @@ OHLC + RSI/KDJ/ATR 指标数据)。
 
 ## iOS App (app/ 目录)
 
-SwiftUI 原生 App `GoldCotTracker`, 与网页同功能 (持仓看板 + 技术分析双 Tab):
-Canvas 手绘图表 (大数据量不卡), 坐标文字走 SwiftUI 保证拖动流畅,
-长按十字光标数值浮窗, 时间条拖动实时跟手 + 双击复位,
-PCR 单独显示时叠加 ±1σ 上下轨, 深色模式适配, 数据本地缓存 (打开秒显, 后台联网刷新)。
-与网页**共享同一套统一数据源**: `rt_charts.js` (K线) + `rt_quotes.js` (实时报价,
-看板顶部横滑报价条) + `ta_data.js` (开采成本); 均线含 MA100。
+SwiftUI 原生 App `GoldCotTracker` 提供 **持仓看板、技术分析、实时行情** 三个 Tab。
+图表使用 Canvas 手绘，坐标文字由 SwiftUI 绘制；支持长按十字光标、时间区间拖动和双击复位。
+App 与网页共享 `rt_charts.js`、`rt_quotes.js`、`ta_data.js` 等数据源。
 
-- 源码在 `app/Sources/`; 工程由 `app/project.yml` 经 XcodeGen 生成, 勿手改 pbxproj
-- 构建/真机安装命令、签名团队、已知坑位全部记录在 **[process.md](process.md)**
-  (接续工作手册, 每次任务更新)
-- 免费 Apple ID 签名的真机包 **7 天过期**, 到期需重新构建安装
+- **持仓看板**：五类资金净持仓、管理基金多空分项、总持仓、金价/美元指数、PCR；
+  增加管理基金净持仓 **1/3/5 年分位数**及 COT 与金价背离提示。
+- **技术分析**：7 个面板，包含 K 线/布林带/斐波那契、均线、AISC、MACD，
+  以及 **RSI(14)、KDJ(9,3,3)、ATR(14)**。
+- **实时行情**：伦敦金、COMEX 黄金、上海黄金 T+D 快照及日 K/MACD。
+- **外观与刷新**：三页均可选择跟随系统、浅色或深色，主题选择在本机保存；
+  支持手动刷新和回到前台自动刷新。请求带时间戳并禁用本地缓存，避免继续显示旧版本数据。
+- **导出**：持仓看板与技术分析页支持通过系统分享面板导出当前内容的 **CSV / PNG**。
+- **主屏幕图标**：使用 `Assets.xcassets/AppIcon` 中的深色底金色 K 线图标；
+  可用 `python3 app/generate_icon.py` 重新生成 1024×1024 原始图标。
+
+源码在 `app/Sources/`。工程配置以 `app/project.yml` 为源，同时需保持
+`app/GoldCotTracker.xcodeproj/project.pbxproj` 同步；本机暂无可用 XcodeGen 时，
+允许手工同步 pbxproj，并在 `process.md` 留痕。构建、真机安装、签名和验证边界均记录在
+**[process.md](process.md)**。免费 Apple ID 签名的真机包 **7 天过期**，到期需重新构建安装。
 
 ## COT 周报推送
 

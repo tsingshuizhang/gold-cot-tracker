@@ -5,7 +5,9 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var store: DataStore
     @State private var dim: Dim = .week
-    @State private var range: ClosedRange<Double> = 0...1
+    @AppStorage("goldCotZoomStart") private var zoomStart = 0.0
+    @AppStorage("goldCotZoomEnd") private var zoomEnd = 1.0
+    @State private var shareItem: ShareItem?
     @State private var hiddenNet: Set<String> = []
     @State private var hiddenCat: Set<String> = []
     @State private var hiddenLS: Set<String> = []
@@ -34,7 +36,42 @@ struct DashboardView: View {
         if hi > lo { domainCache = lo...hi }
     }
 
+    private var range: ClosedRange<Double> { zoomStart...zoomEnd }
+
+    private var rangeBinding: Binding<ClosedRange<Double>> {
+        Binding(get: { range }, set: {
+            zoomStart = $0.lowerBound
+            zoomEnd = $0.upperBound
+        })
+    }
+
     private var window: ClosedRange<Date> { Date().window(range, in: domain) }
+
+    /// 与网页一致：26 周窗口，净持仓创新低/高但金价未同步，只保留最近 12 个。
+    private var divergences: [ChartMarker] {
+        let cot = store.cot.cot.sorted { $0.date < $1.date }
+        guard cot.count > 26, !store.cot.price.isEmpty else { return [] }
+        let priceMap = Dictionary(store.cot.price.map { ($0.date, $0.value) },
+                                  uniquingKeysWith: { _, last in last })
+        var signals: [ChartMarker] = []
+        for i in 26..<cot.count {
+            let current = cot[i]
+            guard let price = priceMap[current.date] else { continue }
+            let window = cot[i - 26...i]
+            let nets = window.map(\.net)
+            let prices = window.compactMap { priceMap[$0.date] }
+            guard prices.count >= 13, let minNet = nets.min(), let maxNet = nets.max(),
+                  let minPrice = prices.min(), let maxPrice = prices.max() else { continue }
+            if current.net == minNet && price > minPrice * 1.02 {
+                signals.append(ChartMarker(date: current.date, value: 0,
+                                           label: "顶背离", color: C.mm))
+            } else if current.net == maxNet && price < maxPrice * 0.98 {
+                signals.append(ChartMarker(date: current.date, value: 0,
+                                           label: "底背离", color: C.pm))
+            }
+        }
+        return Array(signals.suffix(12))
+    }
 
     /// 滑块上方显示的当前选中区间
     private var windowLabel: String {
@@ -67,10 +104,29 @@ struct DashboardView: View {
                 priceDxyPanel
                 pcrPanel
 
-                RangeSlider(range: $range, label: windowLabel)
+                RangeSlider(range: rangeBinding, label: windowLabel)
+                if let lastRefresh = store.lastRefresh {
+                    Text("最近刷新 \(lastRefresh.formatted(date: .omitted, time: .standard))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
         .navigationTitle("黄金 CFTC COT 持仓看板")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Button("导出 CSV", systemImage: "tablecells") { exportCSV() }
+                    Button("导出 PNG", systemImage: "photo") { exportPNG() }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .disabled(series.isEmpty)
+                RefreshButton()
+                ThemeToggleButton()
+            }
+        }
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .refreshable { await store.refresh() }
         .onAppear { if seriesCache.isEmpty { recomputeBase() } }
         .onChange(of: dim) { _, _ in recomputeBase() }
@@ -118,6 +174,16 @@ struct DashboardView: View {
             let s = store.cot.cot.sorted { $0.date < $1.date }
             guard let last = s.last, let prev = s.dropLast().last else { return [] }
             let pub = Calendar.current.date(byAdding: .day, value: 3, to: last.date) ?? last.date
+            let nets = s.map(\.net)
+            func percentile(_ window: Int) -> Double {
+                let subset = nets.suffix(window)
+                guard !subset.isEmpty else { return 0 }
+                return Double(subset.filter { $0 <= last.net }.count) / Double(subset.count) * 100
+            }
+            let p1 = percentile(52), p3 = percentile(156), p5 = percentile(260)
+            let crowded = ([p1, p3, p5].max() ?? 0) >= 90
+            let quiet = ([p1, p3, p5].min() ?? 100) <= 10
+            let status = crowded ? "🔴 极度拥挤" : quiet ? "🟢 极度冷清" : "当前值历史分位"
             return [
                 ("最新报告日期", DateUtil.short.string(from: last.date), nil,
                  "\(DateUtil.short.string(from: pub)) 发布"),
@@ -125,6 +191,8 @@ struct DashboardView: View {
                 ("散户/非报告净持仓", fmt(last.nr), last.nr - prev.nr, nil),
                 ("净多占总持仓", String(format: "%.1f%%", last.oi != 0 ? last.net / last.oi * 100 : 0), nil, nil),
                 ("总持仓 Open Interest", fmt(last.oi), last.oi - prev.oi, nil),
+                ("管理基金净持仓分位数",
+                 String(format: "1年 %.1f%% · 3年 %.1f%% · 5年 %.1f%%", p1, p3, p5), nil, status),
             ]
         }()
         return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
@@ -132,6 +200,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(r.0).font(.caption).foregroundStyle(.secondary)
                     Text(r.1).font(.title3).bold()
+                        .lineLimit(2).minimumScaleFactor(0.7)
                     if let d = r.2 {
                         Text("\(d >= 0 ? "+" : "")\(fmt(d)) 周环比")
                             .font(.caption2)
@@ -167,6 +236,7 @@ struct DashboardView: View {
                         [CanvasSeries(name: "金价", color: C.gold, points: price)],
                     bars: hiddenNet.contains("净持仓") ? [] : bars,
                     barName: "净持仓",
+                    markers: divergences,
                     height: 168)
             }
         }
@@ -318,5 +388,34 @@ struct DashboardView: View {
                 MultiLineCanvas(left: arr, hLine: (1.0, "1.0"), height: 158)
             }
         }
+    }
+
+    // MARK: 导出当前可视区间
+
+    private func exportCSV() {
+        let visible = series.filter { window.contains($0.date) }
+        guard !visible.isEmpty else { return }
+        let header = "日期,管理基金净持仓,管理基金多头,管理基金空头,总持仓,生产商净持仓,掉期商净持仓,其他报告净持仓,散户净持仓"
+        let lines = [header] + visible.map { r in
+            [DateUtil.short.string(from: r.date), r.net, r.lo, r.sh, r.oi,
+             r.pm, r.swap, r.oth, r.nr].map { "\($0)" }.joined(separator: ",")
+        }
+        let name = "gold_cot_\(DateUtil.short.string(from: visible[0].date))_\(dim.rawValue).csv"
+        shareItem = AppExport.csv(lines: lines, name: name).map { ShareItem(url: $0) }
+    }
+
+    private func exportPNG() {
+        let content = VStack(alignment: .leading, spacing: 0) {
+            Text("黄金 CFTC COT 持仓看板 · \(windowLabel)")
+                .font(.headline).padding()
+            netPanel
+            categoryPanel
+            longShortPanel
+            oiPanel
+            priceDxyPanel
+            pcrPanel
+        }
+        .frame(width: 900)
+        shareItem = AppExport.png(of: content, name: "gold_cot_dashboard.png").map { ShareItem(url: $0) }
     }
 }

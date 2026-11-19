@@ -6,10 +6,13 @@ import Combine
 struct TAView: View {
     @EnvironmentObject private var store: DataStore
     @State private var period: TaPeriod = .day
-    @State private var range: ClosedRange<Double> = 0...1
+    @AppStorage("goldCotZoomStart") private var zoomStart = 0.0
+    @AppStorage("goldCotZoomEnd") private var zoomEnd = 1.0
+    @State private var shareItem: ShareItem?
     @State private var hiddenMA: Set<String> = []
     @State private var hiddenAISC: Set<String> = []
     @State private var hiddenMACD: Set<String> = []
+    @State private var hiddenKDJ: Set<String> = []
 
     // 重计算结果缓存: 只在数据/周期变化时重算, 拖动滑块时每帧不再重复聚合
     @State private var ohlcAll: [Ohlc] = []
@@ -22,7 +25,24 @@ struct TAView: View {
         if let lo = ds.min(), let hi = ds.max(), hi > lo { domain = lo...hi }
     }
 
+    private var range: ClosedRange<Double> { zoomStart...zoomEnd }
+
+    private var rangeBinding: Binding<ClosedRange<Double>> {
+        Binding(get: { range }, set: {
+            zoomStart = $0.lowerBound
+            zoomEnd = $0.upperBound
+        })
+    }
+
     private var window: ClosedRange<Date> { Date().window(range, in: domain) }
+
+    /// 指标先在完整周期序列上计算，再按可视区间取点，避免降采样改变指标值。
+    private func indicatorPoints(_ values: [Double?]) -> [(Date, Double)] {
+        downsample(zip(ohlcAll, values).compactMap { row, value -> (Date, Double)? in
+            guard let value, window.contains(row.date) else { return nil }
+            return (row.date, value)
+        })
+    }
 
     /// 滑块上方显示的当前选中区间
     private var windowLabel: String {
@@ -55,11 +75,33 @@ struct TAView: View {
                 maPanel
                 aiscPanel
                 macdPanel
+                rsiPanel
+                kdjPanel
+                atrPanel
 
-                RangeSlider(range: $range, label: windowLabel)
+                RangeSlider(range: rangeBinding, label: windowLabel)
+                if let lastRefresh = store.lastRefresh {
+                    Text("最近刷新 \(lastRefresh.formatted(date: .omitted, time: .standard))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
             }
         }
         .navigationTitle("COMEX 黄金技术分析")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Button("导出 CSV", systemImage: "tablecells") { exportCSV() }
+                    Button("导出 PNG", systemImage: "photo") { exportPNG() }
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .disabled(ohlcAll.isEmpty)
+                RefreshButton()
+                ThemeToggleButton()
+            }
+        }
+        .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
         .refreshable { await store.refresh() }
         .onAppear { if ohlcAll.isEmpty { recomputeBase() } }
         .onChange(of: period) { _, _ in recomputeBase() }
@@ -166,6 +208,86 @@ struct TAView: View {
                            xDomain: window)
             }
         }
+    }
+
+    // MARK: 图5: RSI(14)
+
+    private var rsiPanel: some View {
+        let points = indicatorPoints(Indicators.rsi(ohlcAll.map(\.close)))
+        return Panel(title: "RSI(14) — 相对强弱指数", height: 170) {
+            MultiLineCanvas(
+                left: [CanvasSeries(name: "RSI14", color: .purple, points: points)],
+                hLines: [(70, "超买 70"), (30, "超卖 30"), (50, "50")],
+                height: 138, xDomain: window, yDomain: 0...100)
+        }
+    }
+
+    // MARK: 图6: KDJ(9,3,3)
+
+    private var kdjPanel: some View {
+        let values = Indicators.kdj(ohlcAll)
+        let definitions = [("K", values.k, Color.blue),
+                           ("D", values.d, Color.orange),
+                           ("J", values.j, Color.red)]
+        let lines = definitions.filter { !hiddenKDJ.contains($0.0) }.map {
+            CanvasSeries(name: $0.0, color: $0.2, points: indicatorPoints($0.1))
+        }
+        return Panel(title: "KDJ(9, 3, 3) — 随机指标", height: 200) {
+            VStack(spacing: 4) {
+                LegendToggle(items: [("K", .blue), ("D", .orange), ("J", .red)],
+                             hidden: $hiddenKDJ)
+                MultiLineCanvas(left: lines, hLines: [(80, "80"), (20, "20")],
+                                height: 158, xDomain: window)
+            }
+        }
+    }
+
+    // MARK: 图7: ATR(14)
+
+    private var atrPanel: some View {
+        let points = indicatorPoints(Indicators.atr(ohlcAll))
+        return Panel(title: "ATR(14) — 平均真实波幅", height: 170) {
+            MultiLineCanvas(
+                left: [CanvasSeries(name: "ATR14", color: C.dxy, points: points)],
+                height: 138, xDomain: window)
+        }
+    }
+
+    // MARK: 导出当前可视区间
+
+    private func exportCSV() {
+        let rsi = Indicators.rsi(ohlcAll.map(\.close))
+        let kdj = Indicators.kdj(ohlcAll)
+        let atr = Indicators.atr(ohlcAll)
+        func number(_ value: Double?) -> String {
+            value.map { String(format: "%.2f", $0) } ?? ""
+        }
+        var lines = ["日期,开盘,收盘,最高,最低,RSI14,K,D,J,ATR14"]
+        for (i, row) in ohlcAll.enumerated() where window.contains(row.date) {
+            let fields = [DateUtil.short.string(from: row.date), "\(row.open)", "\(row.close)",
+                          "\(row.high)", "\(row.low)", number(rsi[i]), number(kdj.k[i]),
+                          number(kdj.d[i]), number(kdj.j[i]), number(atr[i])]
+            lines.append(fields.joined(separator: ","))
+        }
+        guard lines.count > 1 else { return }
+        let name = "gold_ta_\(DateUtil.short.string(from: ohlcAll[0].date))_\(period.rawValue).csv"
+        shareItem = AppExport.csv(lines: lines, name: name).map { ShareItem(url: $0) }
+    }
+
+    private func exportPNG() {
+        let content = VStack(alignment: .leading, spacing: 0) {
+            Text("COMEX 黄金技术分析 · \(windowLabel)")
+                .font(.headline).padding()
+            candlePanel
+            maPanel
+            aiscPanel
+            macdPanel
+            rsiPanel
+            kdjPanel
+            atrPanel
+        }
+        .frame(width: 900)
+        shareItem = AppExport.png(of: content, name: "gold_ta_dashboard.png").map { ShareItem(url: $0) }
     }
 }
 
@@ -292,6 +414,13 @@ struct RealtimeView: View {
             }
         }
         .navigationTitle("实时行情")
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                RefreshButton()
+                ThemeToggleButton()
+            }
+        }
+        .refreshable { await store.refresh() }
         .onReceive(timer) { _ in
             Task { await store.refreshRtQuotesLive() }
         }

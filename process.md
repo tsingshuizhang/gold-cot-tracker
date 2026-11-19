@@ -1,7 +1,7 @@
 # Process — 项目接续工作手册
 
 > 本文件在**每次任务时更新**，配合 README.md，保证任何一次会话中断后，下一个会话（人或 AI）能
-> 零成本接续。最后更新：2026-11-20（会话：最新版 iOS App 真机构建、安装与启动）。
+> 零成本接续。最后更新：2026-11-20（会话：iOS 功能同步、主屏幕图标修复与真机更新）。
 
 ## 一句话项目
 
@@ -19,11 +19,12 @@ dashboard.html / dashboard_ta.html  # 生成产物（含注入数据，与模板
 realtime.html            # 实时行情页（三品种快照 + 日K + MACD，独立维护）
 echarts.min.js           # 本地内置 ECharts 5.5（勿改回 CDN，用户网络访问 jsdelivr 不稳定）
 data/                    # cot_data.json / ta_data.js / ta_ohlc.json / 各类缓存（Actions 定时提交）
-app/                     # iOS App 全部源码 + XcodeGen 工程
-  Sources/               # GoldCotTrackerApp.swift(Tab入口) / DashboardView / TAView /
+app/                     # iOS App 全部源码 + Xcode 工程
+  Sources/               # GoldCotTrackerApp.swift(三Tab/主题/分享) / DashboardView / TAView /
                          # ChartViews.swift(Panel/RangeSlider/LegendToggle/MultiLineCanvas/MacdCanvas/YAxisLabels/ChartTooltip)
-                         # CandleChartView / Indicators.swift(指标计算, 含边界保护) / DataStore.swift(抓取+本地缓存)
-  project.yml            # XcodeGen 配置（改工程配置改这里，勿手改 pbxproj）
+                         # CandleChartView / Indicators.swift(指标计算) / DataStore.swift(联网刷新, 无磁盘数据缓存)
+  Sources/Assets.xcassets # AppIcon + AccentColor；AppIcon 源图由 app/generate_icon.py 生成
+  project.yml            # XcodeGen 配置源；无 XcodeGen 时需同步手工维护 pbxproj 并留痕
 .github/workflows/update.yml  # 定时更新: 每天 UTC 23:30 全量 + 美股时段每小时刷新行情
 ```
 
@@ -89,31 +90,41 @@ app/                     # iOS App 全部源码 + XcodeGen 工程
 ## iOS App 开发与安装
 
 ```bash
+# 构建前检查（完整 JSON 留痕；路径按当前插件安装位置调整）
+MOBILE_SKILLS="$HOME/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/plugins/managed/mobile-app-building/skills"
+python3 "$MOBILE_SKILLS/mobile-app-preview/scripts/check_environment.py" \
+  ios --purpose build --project "$PWD/app" --json
+
 # 模拟器构建（快迭代用这个验证 UI）
 xcodebuild -project app/GoldCotTracker.xcodeproj -scheme GoldCotTracker \
   -configuration Debug -sdk iphonesimulator build \
   CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=YES
-# 安装+截图验证
-SIM=FE323DBE-E1BE-477C-A82E-559B79DC65D9
-xcrun simctl install $SIM ~/Library/Developer/Xcode/DerivedData/GoldCotTracker-*/Build/Products/Debug-iphonesimulator/GoldCotTracker.app
-xcrun simctl launch $SIM com.tsingshuizhang.GoldCotTracker
-xcrun simctl io $SIM screenshot out.png
-xcrun simctl openurl $SIM "http://localhost:端口/页面#chart"   # Safari 验证网页（加锚点直达图表区）
+# 使用技能助手安装、启动、截图；必须绑定明确 UDID 和工程归属
+python3 "$MOBILE_SKILLS/ios-app-building/scripts/simulator.py" \
+  --app "$HOME/Library/Developer/Xcode/DerivedData/GoldCotTracker-frugtszushkfjaabdqeolmrvhdvv/Build/Products/Debug-iphonesimulator/GoldCotTracker.app" \
+  --udid FE323DBE-E1BE-477C-A82E-559B79DC65D9 --run \
+  --screenshot "$PWD/artifacts/ios-current.png" --preview-owner "$PWD/app"
 
-# 真机构建+安装（用户机器已配置好）
+# 真机构建：当前环境用 generic/platform=iOS；实体设备 destination 曾无法识别
 xcodebuild -project app/GoldCotTracker.xcodeproj -scheme GoldCotTracker \
-  -configuration Debug -destination 'platform=iOS,id=<手机UDID>' \
-  -allowProvisioningUpdates DEVELOPMENT_TEAM=MQM879TDKM CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=YES build
-xcrun devicectl device install app --device <手机UDID> \
-  ~/Library/Developer/Xcode/DerivedData/GoldCotTracker-*/Build/Products/Debug-iphoneos/GoldCotTracker.app
+  -configuration Debug -destination 'generic/platform=iOS' \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=MQM879TDKM \
+  CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=YES build
+xcrun devicectl device install app --device 00008150-001129390E62401C \
+  "$HOME/Library/Developer/Xcode/DerivedData/GoldCotTracker-frugtszushkfjaabdqeolmrvhdvv/Build/Products/Debug-iphoneos/GoldCotTracker.app"
+xcrun devicectl device process launch --device 00008150-001129390E62401C \
+  --terminate-existing com.tsingshuizhang.GoldCotTracker
 ```
 
 - **签名团队**：`MQM879TDKM`（Apple ID tsingshui@hotmail.com，个人免费账号）。
-  注意证书 CN 括号里的 M4342XHZX7 是错的，OU 字段才是团队 ID。
-- **免费账号 7 天过期**：真机 App 到期打不开，重新跑上面两条命令即可（手机上已信任过证书不用重设）。
+  注意证书 CN 括号里的 M4342XHZX7 是证书用户 ID，不是团队 ID；OU 字段才是团队 ID。
+- **免费账号 7 天过期**：真机 App 到期打不开，重新构建安装即可（手机上已信任过证书不用重设）。
 - 用户真机：iPhone 17 Pro Max，UDID `00008150-001129390E62401C`。
-- **2026-09-28 真机安装遇 `com.apple.dt.CoreDeviceError 4016`**：`The device is not able to fulfill the requested usage assertion requirements.`
-  通常是手机**锁屏/熄屏/忙**导致；解锁并保持亮屏后重试即可。源码已更新（发布日期卡片）。
+- 模拟器被现有预览占用时，不要停止其他任务或绕过归属保护；核对同一工程 owner，
+  保留可用预览，并如实记录新版模拟器安装/视觉验证是否完成。
+- **2026-09-28 与 2026-11-20 真机安装遇 `com.apple.dt.CoreDeviceError 4016`**：
+  `The device is not able to fulfill the requested usage assertion requirements.`
+  通常是手机**锁屏/熄屏/忙**导致；解锁并保持亮屏后重试。2026-11-20 用户确认解锁后安装成功。
 
 ## 网页开发要点（血泪经验，勿重蹈）
 
@@ -138,17 +149,22 @@ xcrun devicectl device install app --device <手机UDID> \
 - **RangeSlider**：手势挂在静止滑轨上用绝对坐标（挂移动滑块上会漂移）；滑块实时跟手、
   图表提交限流 17Hz；双击复位；上方显示区间文字。
 - **结果缓存**：TAView/DashboardView 的聚合序列+时间域在 @State 缓存（recomputeBase），
-  只在数据/周期变化时重算，拖动每帧零重算。
-- TA 页 4 图共享显式 X 轴（xDomain=window）；看板 6 图各用自身数据范围（PCR 数据 2022 年才有，
+  只在数据/周期变化时重算，拖动每帧零重算。这是内存计算缓存，不是网络磁盘缓存。
+- TA 页 **7 图**共享显式 X 轴（xDomain=window）；看板 6 图各用自身数据范围（PCR 数据 2022 年才有，
   共享全局限会挤压成竖线——这个坑已踩过）。
-- **Indicators 有边界保护**：boll/macd 数据不足 n 条时返回空（`19..<5` 非法区间崩溃事故过）。
-- 深色模式：全部用系统自适应色（systemBackground/secondary），禁止写死白色/灰色（事故过）。
-- DataStore.refresh()：先读磁盘缓存立即显示，再联网刷新并落盘（caches 目录）。
+- **Indicators 有边界保护**：boll/macd 数据不足 n 条时返回空（`19..<5` 非法区间崩溃事故过）；
+  2026-11-20 新增 RSI(14)、KDJ(9,3,3)、ATR(14)。
+- 外观：三页共用 `@AppStorage("goldCotTheme")`，值为 `auto|light|dark`，默认跟随系统；
+  图表和文字继续使用系统自适应色，禁止写死影响深色对比度的颜色。
+- `DataStore.refresh()` 已改为直接联网取最新数据，**不再读写磁盘数据缓存**；
+  请求加时间戳和 `no-cache`，并避免并发重复刷新。启动、回前台、下拉和刷新按钮均可触发更新。
+- 持仓/技术页通过 `AppExport` + 系统分享面板导出 CSV/PNG；导出使用当前可视区间。
 - **签名已配置为自动** (2026-10-01 起): pbxproj + project.yml 里
-  `CODE_SIGNING_ALLOWED=YES / CODE_SIGN_STYLE=Automatic / DEVELOPMENT_TEAM=MQM879TDKM`,
-  **Xcode 直接 Run 即可**, 命令行也不必再手动覆盖签名参数。
-  注意: pbxproj 此次为手工改(本机 XcodeGen.zip 是坏文件), 将来 xcodegen 重生工程
-  依赖 project.yml 里的 settings.base 保持一致, 勿删。
+  `CODE_SIGNING_ALLOWED=YES / CODE_SIGN_STYLE=Automatic / DEVELOPMENT_TEAM=MQM879TDKM`。
+- **图标与资产**：`Sources/Assets.xcassets/AppIcon.appiconset` 是 1024×1024 无透明通道源图，
+  `project.yml` 设置 `ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon`。本机无可用 `xcodegen`，
+  本次已把 Assets 引用、Resources Build Phase、Debug/Release AppIcon 设置手工同步到 pbxproj；
+  将来重新生成工程时必须确认这些设置仍在，不能只改其中一个工程文件。
 
 ## 已知环境坑
 
@@ -205,12 +221,37 @@ xcrun devicectl device install app --device <手机UDID> \
 - 数据生成时观察到东方财富连接中断，以及 Yahoo **403 / SSL EOF**；页面使用既有缓存。上述异常仍需后续排查，不能据此声称在线数据源已恢复或实时数据已核验。
 - GitHub Pages 三页（持仓看板 / 技术分析 / 实时行情）**本轮未复核**；旧台账中的线上“正常”及 2026-10 月数据日期不再作为当前状态引用。线上以 Actions 实际提交和页面复核为准。
 
-### App 与待办
+### App 功能与图标修复（2026-11-20）
 
-- **2026-11-20 真机更新完成**：使用当前 `main` 源码构建并安装到用户的 iPhone 17 Pro Max（UDID `00008150-001129390E62401C`），随后通过 `devicectl device process launch --terminate-existing` 启动成功。
-- 本次产物：`GoldCotTracker.app`，Bundle ID `com.tsingshuizhang.GoldCotTracker`，版本 **1.0 (1)**，最低 iOS 17.0；`inspect_app.py` 确认为 iOS 真机 arm64 产物，`codesign --verify --deep --strict` 通过。
-- 描述文件已确认包含该设备，plist 原始 `ExpirationDate` 为 **2026-11-26 17:20:12**；免费签名到期后仍需重新构建安装。
-- 验证边界：本轮已完成真机构建、签名检查、安装和进程启动，**未做手机画面截图或触控交互验证**，不能据此声称各页面功能已在真机逐项验收。
-- 本地验证文件：`build-device.log`、`build-settings-device.json`、`device-app-inspection.json`（仅本地留痕，未纳入版本库）。
-- 待办：复核 GitHub Pages 三页及 Actions 最新运行；排查东方财富/Yahoo 抓取异常；TestFlight 上架（免 7 天签名烦恼）；`brew install xcodegen`（本机 XcodeGen.zip 是坏文件）。
+- **目的**：把网页版近期功能同步到原生 App，修复手机仍显示旧数据、缺少深浅色切换和主屏幕图标异常。
+- **源码修改**：`GoldCotTrackerApp.swift` 增加三页主题菜单、刷新、回前台刷新及分享基础设施；
+  `DataStore.swift` 禁用磁盘数据缓存、请求加时间戳并合并并发刷新；`Indicators.swift` 增加 RSI/KDJ/ATR；
+  `ChartViews.swift` 增加参考线、信号点和固定 Y 轴；`DashboardView.swift` 增加分位数、COT 背离、区间联动及导出；
+  `TAView.swift` 扩为 7 面板并增加导出，实时页同步主题和刷新。
+- **图标修复**：原工程无 `Assets.xcassets`，旧包也没有 `CFBundleIcons`。新增 `generate_icon.py`、
+  1024×1024 无透明通道的 `AppIcon-1024.png`、AppIcon/AccentColor 资产目录；`project.yml` 和 pbxproj 均已同步。
+  `actool` 实际生成 `AppIcon60x60@2x.png`、`AppIcon76x76@2x~ipad.png` 和 `Assets.car`，
+  新包 `Info.plist` 含 `CFBundleIcons.CFBundlePrimaryIcon.CFBundleIconName=AppIcon`。
+
+### App 构建、安装与验证边界（2026-11-20）
+
+- 环境检查 `check_environment.py ios --purpose build --json` 返回 `status=pass`，macOS/Xcode 为 ready。
+- **模拟器**：含图标的 Debug-iphonesimulator 构建已成功（`build-simulator-current.log`）。
+  图标加入前的持仓页浅色、系统深色画面已截图并人工查看，分位数卡片和主要图表显示正常。
+  但本轮用技能助手安装新版时，两次均因 UDID `FE323DBE-E1BE-477C-A82E-559B79DC65D9`
+  已被现有预览占用而在安装前停止；未停止该预览，也未绕过归属保护。因此**新版模拟器安装、
+  主屏幕图标视觉和新增页面交互均未验收**，现有浏览器预览不能当作新版证据。
+- **真机**：含图标的 Debug-iphoneos 构建成功，完整日志为 `artifacts/build-device-icon.log`。
+  `inspect_app.py` 确认 Bundle ID `com.tsingshuizhang.GoldCotTracker`、版本 **1.0 (1)**、最低 iOS 17.0、
+  arm64 iPhoneOS 产物；`codesign --verify --deep --strict` 通过。描述文件团队为 `MQM879TDKM`，
+  包含 UDID `00008150-001129390E62401C`，原始 `ExpirationDate` 为 **2026-11-26 17:20:12 UTC**。
+- 用户确认手机已解锁后，`devicectl device install app` 于本轮返回 **App installed**；
+  随后 `devicectl device process launch --terminate-existing` 返回启动成功。这证明安装和进程启动，
+  **不等于**真机画面、主屏幕图标视觉或触控功能已验收。
+- 早前浏览器 WebMCP 与原生 UI 自动化对技术分析/主题控件的点按只返回已分发或成功，但画面未变化；
+  已停止重复尝试。技术分析 7 面板、实时页按钮、手动主题菜单、CSV/PNG 导出均仍需真实交互验收。
+- 本地截图和构建日志仅作验证留痕，不纳入版本库。真机安装使用 DerivedData 下的 `.app`，不是 IPA，
+  也不是可分发的 App Store/TestFlight 包。
+- 待办：在手机上人工确认主屏幕图标、三页主题/刷新和导出；处理模拟器预览归属后再验收新版；
+  复核 GitHub Pages 三页及 Actions 最新运行；排查东方财富/Yahoo 抓取异常；考虑 TestFlight 避免 7 天签名限制。
 - 待确认：`barchart.com/stocks` 52 周数据页面显示问题（用户提过，需确认具体页面）。

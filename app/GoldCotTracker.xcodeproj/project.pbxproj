@@ -15,6 +15,7 @@
 		BB0000000000000000000106 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000006 /* DashboardView.swift */; };
 		BB0000000000000000000107 /* TAView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000007 /* TAView.swift */; };
 		BB0000000000000000000108 /* CandleChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000008 /* CandleChartView.swift */; };
+		BB0000000000000000000109 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000009 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		BB0000000000000000000006 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000007 /* TAView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TAView.swift; sourceTree = "<group>"; };
 		BB0000000000000000000008 /* CandleChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartView.swift; sourceTree = "<group>"; };
+		BB0000000000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BB0000000000000000000090 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB00000000000000000000F0 /* GoldCotTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GoldCotTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -69,6 +71,7 @@
 				BB0000000000000000000006 /* DashboardView.swift */,
 				BB0000000000000000000007 /* TAView.swift */,
 				BB0000000000000000000008 /* CandleChartView.swift */,
+				BB0000000000000000000009 /* Assets.xcassets */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -83,6 +86,17 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXResourcesBuildPhase section */
+		BB0000000000000000000203 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB0000000000000000000109 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXNativeTarget section */
 		BB0000000000000000000401 /* GoldCotTracker */ = {
 			isa = PBXNativeTarget;
@@ -90,6 +104,7 @@
 			buildPhases = (
 				BB0000000000000000000202 /* Sources */,
 				BB0000000000000000000201 /* Frameworks */,
+				BB0000000000000000000203 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -261,6 +276,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -288,6 +304,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_IDENTITY = "Apple Development";

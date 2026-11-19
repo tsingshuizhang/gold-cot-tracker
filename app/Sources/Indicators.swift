@@ -120,4 +120,68 @@ enum Indicators {
         let diff = hi - lo
         return fibRatios.map { hi - diff * $0 }
     }
+
+    // MARK: - RSI / KDJ / ATR (与 gold_cot.py 同口径)
+
+    static func rsi(_ closes: [Double], period: Int = 14) -> [Double?] {
+        var out = [Double?](repeating: nil, count: closes.count)
+        guard closes.count > period else { return out }
+        var avgGain = 0.0, avgLoss = 0.0
+        for i in 1...period {
+            let change = closes[i] - closes[i - 1]
+            avgGain += max(change, 0) / Double(period)
+            avgLoss += max(-change, 0) / Double(period)
+        }
+        out[period] = avgLoss == 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss)
+        guard closes.count > period + 1 else { return out }
+        for i in (period + 1)..<closes.count {
+            let change = closes[i] - closes[i - 1]
+            avgGain = (avgGain * Double(period - 1) + max(change, 0)) / Double(period)
+            avgLoss = (avgLoss * Double(period - 1) + max(-change, 0)) / Double(period)
+            out[i] = avgLoss == 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss)
+        }
+        return out
+    }
+
+    static func kdj(_ rows: [Ohlc], n: Int = 9,
+                    kPeriod: Int = 3, dPeriod: Int = 3)
+        -> (k: [Double?], d: [Double?], j: [Double?]) {
+        var k = [Double?](repeating: nil, count: rows.count)
+        var d = k, j = k
+        guard rows.count >= n else { return (k, d, j) }
+        var kPrev = 50.0, dPrev = 50.0
+        for i in (n - 1)..<rows.count {
+            let window = rows[i - n + 1...i]
+            let low = window.map(\.low).min() ?? 0
+            let high = window.map(\.high).max() ?? 0
+            let close = rows[i].close
+            let rsv = high == low ? 50 : (close - low) / (high - low) * 100
+            let kValue = (kPrev * Double(kPeriod - 1) + rsv) / Double(kPeriod)
+            let dValue = (dPrev * Double(dPeriod - 1) + kValue) / Double(dPeriod)
+            k[i] = kValue
+            d[i] = dValue
+            j[i] = 3 * kValue - 2 * dValue
+            kPrev = kValue
+            dPrev = dValue
+        }
+        return (k, d, j)
+    }
+
+    static func atr(_ rows: [Ohlc], period: Int = 14) -> [Double?] {
+        var out = [Double?](repeating: nil, count: rows.count)
+        guard rows.count > period else { return out }
+        var trs: [Double] = []
+        for i in 1..<rows.count {
+            let high = rows[i].high, low = rows[i].low
+            let previousClose = rows[i - 1].close
+            trs.append(max(high - low, abs(high - previousClose), abs(low - previousClose)))
+        }
+        out[period] = trs.prefix(period).reduce(0, +) / Double(period)
+        guard rows.count > period + 1 else { return out }
+        for i in (period + 1)..<rows.count {
+            guard let previous = out[i - 1] else { continue }
+            out[i] = (previous * Double(period - 1) + trs[i - 1]) / Double(period)
+        }
+        return out
+    }
 }
