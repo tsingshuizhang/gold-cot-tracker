@@ -315,4 +315,5 @@ xcrun devicectl device process launch --device 00008150-001129390E62401C \
 - **安装状态与边界**：首次 `devicectl` 安装返回 CoreDeviceError **4016**（设备当前无可用
   usage assertion），需用户解锁并保持亮屏后重试；本段将在重试后更新。模拟器真实合成触摸已通过，
   但不能替代真机触控、性能和画面验收。本轮未修改网页或数据流水线，也未复核 GitHub Pages。
-- **对应提交**：待提交后回填。
+- **对应提交**：功能、测试与说明文档为 `c6f903d`（`test: add native UI regression coverage`）；
+  本验证台账的提交号见随后 docs 提交。
